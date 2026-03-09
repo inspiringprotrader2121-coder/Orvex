@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #f4f6ff;
+  --color-primary-100: #e8ecff;
+  --color-primary-200: #d0daff;
+  --color-primary-300: #a7bbff;
+  --color-primary-400: #7a95ff;
+  --color-primary-500: #4d66ff;
+  --color-primary-600: #2b3aff;
+  --color-primary-700: #1a22e6;
+  --color-primary-800: #161db8;
+  --color-primary-900: #161b91;
+  
+  --color-background: #050505;
+  --color-foreground: #fafafa;
+  --color-card: #0a0a0a;
+  --color-card-foreground: #fafafa;
+  --color-border: #262626;
+  --color-input: #262626;
+  --color-ring: #ffffff;
+  
+  --radius-lg: 0.5rem;
+  --radius-md: calc(0.5rem - 2px);
+  --radius-sm: calc(0.5rem - 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    background-image: 
+      radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+      radial-gradient(at 50% 0%, hsla(225,39%,30%,0.1) 0, transparent 50%), 
+      radial-gradient(at 100% 0%, hsla(339,49%,30%,0.1) 0, transparent 50%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+}
+
+.glass-panel {
+  background: rgba(10, 10, 10, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-input {
+  background: rgba(40, 40, 40, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  transition: all 0.2s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--color-primary-500);
+  background: rgba(40, 40, 40, 0.6);
+  box-shadow: 0 0 0 1px var(--color-primary-500);
+}
+
+.btn-primary {
+  background: linear-gradient(to right, var(--color-primary-600), var(--color-primary-500));
+  color: white;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(77, 102, 255, 0.25);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
