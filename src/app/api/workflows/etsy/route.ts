@@ -1,65 +1,42 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { auth } from "@/auth";
-import { db } from "@/lib/db";
-import { workflows } from "@/lib/db/schema";
-import { CreditService } from "@/lib/credits";
-import { enqueueWorkflow } from "@/lib/queue";
+import { getErrorMessage } from "@/lib/errors";
+import { WorkflowSubmissionService } from "@server/services/workflow-submission-service";
+import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-    const userId = session.user.id;
-
-    const body = await request.json();
-    const { productName, description, audience, category, projectId } = body;
-
-    if (!productName || !description) {
-      return NextResponse.json({ error: 'Missing core product info' }, { status: 400 });
-    }
-
-    const CREDIT_COST = 10;
-    const success = await CreditService.deductCredits(userId, CREDIT_COST, `Etsy Listing: ${productName}`);
-
-    if (!success) {
-      return NextResponse.json({
-        error: 'Insufficient credits',
-        needs: CREDIT_COST,
-      }, { status: 402 });
-    }
-
-    const [workflow] = await db.insert(workflows).values({
-      userId,
-      projectId: projectId || null,
-      type: 'etsy_listing_launch_pack',
-      status: 'pending',
-      inputData: body,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }).returning({ id: workflows.id });
-
-    // Use shared singleton queue
-    await enqueueWorkflow(workflow.id, 'etsy_listing_launch_pack', {
-      userId,
-      productInfo: {
-        name: productName,
-        description,
-        audience,
-        category
-      }
-    });
+    const payload = await request.json();
+    const result = await WorkflowSubmissionService.startLaunchPack(userId, payload);
 
     return NextResponse.json({
+      message: "Launch pack generation queued",
       success: true,
-      workflowId: workflow.id,
-      message: 'Workflow started successfully in background'
+      workflowId: result.workflowId,
     });
+  } catch (error) {
+    console.error("Legacy Etsy Workflow Error:", error);
 
-  } catch (error: any) {
-    console.error('Workflow API Critical Error:', error);
-    return NextResponse.json({ error: 'Internal system fault', details: error.message }, { status: 500 });
+    if (error instanceof ZodError) {
+      return NextResponse.json({ error: "Invalid workflow payload", issues: error.issues }, { status: 400 });
+    }
+
+    if (error instanceof InsufficientCreditsError) {
+      return NextResponse.json({ error: error.message }, { status: 402 });
+    }
+
+    if (error instanceof RateLimitExceededError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+
+    return NextResponse.json({ error: getErrorMessage(error, "Unable to queue launch pack") }, { status: 500 });
   }
 }

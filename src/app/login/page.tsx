@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
 import { LogIn, Mail, Lock, ArrowRight, Rocket } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -31,8 +32,8 @@ export default function LoginPage() {
                 router.push("/dashboard");
                 router.refresh();
             }
-        } catch (err: any) {
-            setError("Authentication service unavailable");
+        } catch (error) {
+            setError(getErrorMessage(error, "Authentication service unavailable"));
         } finally {
             setLoading(false);
         }

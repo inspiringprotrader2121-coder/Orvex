@@ -1,7 +1,9 @@
 import { AIService } from "./service";
 
 // Compatibility layer for older parts of the app
-export const generateJSON = async (prompt: string, system: string) => {
+export const generateJSON = async (prompt: string, _system: string) => {
+  void _system;
+
   // This is basically a legacy wrapper
   return AIService.generateLaunchPack({
     name: "Legacy Product",
@@ -14,6 +16,6 @@ export const generateJSON = async (prompt: string, system: string) => {
 export const Prompts = {
   etsyListing: {
     system: "You generate SEO product listings.",
-    buildPrompt: (name: string, description: string) => `Product: ${name}\nDescription: ${description}`
-  }
-}
+    buildPrompt: (name: string, description: string) => `Product: ${name}\nDescription: ${description}`,
+  },
+};

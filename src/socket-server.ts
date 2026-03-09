@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { Server } from "socket.io";
 import http from "http";
+import { verifySocketToken, type SocketTokenPayload } from "./lib/auth";
+import type { WorkflowUpdatedEvent } from "./lib/workflows";
 
 const PORT = process.env.SOCKET_PORT || 3001;
 const httpServer = http.createServer();
@@ -11,24 +13,50 @@ const httpServer = http.createServer();
  */
 const io = new Server(httpServer, {
     cors: {
-        origin: "*", // Adjust for production once URL is stable
+        origin: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
         methods: ["GET", "POST"]
     }
 });
 
+io.use((socket, next) => {
+    const token = typeof socket.handshake.auth.token === "string"
+        ? socket.handshake.auth.token
+        : null;
+
+    if (!token) {
+        next(new Error("Authentication required"));
+        return;
+    }
+
+    const payload = verifySocketToken(token);
+    if (!payload) {
+        next(new Error("Invalid socket token"));
+        return;
+    }
+
+    socket.data.auth = payload;
+    next();
+});
+
 io.on("connection", (socket) => {
     console.log(`[Socket] Client connected: ${socket.id}`);
+    const auth = socket.data.auth as SocketTokenPayload;
 
-    // Join a room based on userId for targeted notifications
-    socket.on("join", (userId: string) => {
-        if (userId) {
-            console.log(`[Socket] User ${userId} joined room`);
-            socket.join(`user:${userId}`);
+    if (auth.role === "user") {
+        socket.join(`user:${auth.sub}`);
+    }
+
+    socket.on("job.update", (data: WorkflowUpdatedEvent) => {
+        if (auth.role !== "internal") {
+            socket.emit("error", "Forbidden");
+            return;
         }
-    });
 
-    // Relay job updates from worker/api to client
-    socket.on("job.update", (data: { userId: string, workflowId: string, status: string }) => {
+        if (!data?.userId || !data.workflowId || !data.status) {
+            socket.emit("error", "Invalid payload");
+            return;
+        }
+
         console.log(`[Socket] Job Update: ${data.workflowId} -> ${data.status}`);
         io.to(`user:${data.userId}`).emit("workflow.updated", data);
     });

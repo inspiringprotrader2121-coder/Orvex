@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/auth";
+import { getErrorMessage } from "@/lib/errors";
 
-const stripe = new Stripe((process.env.STRIPE_SECRET_KEY || "dummy_key_for_build") as string, {
-    apiVersion: "2023-10-16" as any,
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "dummy_key_for_build");
 
 export async function POST() {
     const session = await auth();
@@ -17,6 +16,10 @@ export async function POST() {
     try {
         const checkoutSession = await stripe.checkout.sessions.create({
             payment_method_types: ["card"],
+            metadata: {
+                creditAmount: "50",
+                plan: "growth-pack",
+            },
             line_items: [
                 {
                     price_data: {
@@ -37,8 +40,8 @@ export async function POST() {
         });
 
         return NextResponse.json({ url: checkoutSession.url });
-    } catch (err: any) {
-        console.error("Stripe Checkout Error:", err);
-        return NextResponse.json({ error: err.message }, { status: 500 });
+    } catch (error) {
+        console.error("Stripe Checkout Error:", error);
+        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
     }
 }

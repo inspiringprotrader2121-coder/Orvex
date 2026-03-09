@@ -1,8 +1,10 @@
 import { auth } from "@/auth";
 
 export default auth((req) => {
-  const isLoggedIn = !!req.auth;
-  const isAuthPage = req.nextUrl.pathname.startsWith("/login") || req.nextUrl.pathname.startsWith("/register");
+  const isLoggedIn = Boolean(req.auth);
+  const isAuthPage =
+    req.nextUrl.pathname.startsWith("/login") ||
+    req.nextUrl.pathname.startsWith("/register");
   const isDashboardPage = req.nextUrl.pathname.startsWith("/dashboard");
 
   if (isAuthPage) {

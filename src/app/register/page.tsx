@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { UserPlus, Mail, Lock, ArrowRight, Rocket, Sparkles } from "lucide-react";
+import { getErrorMessage } from "@/lib/errors";
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -32,8 +33,8 @@ export default function RegisterPage() {
 
             // After registration, redirect to login
             router.push("/login?registered=true");
-        } catch (err: any) {
-            setError(err.message);
+        } catch (error) {
+            setError(getErrorMessage(error, "Failed to register"));
         } finally {
             setLoading(false);
         }

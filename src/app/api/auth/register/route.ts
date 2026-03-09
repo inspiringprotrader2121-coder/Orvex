@@ -1,37 +1,49 @@
 import { NextResponse } from 'next/server';
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { credits, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { getErrorMessage } from "@/lib/errors";
 
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
+    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return NextResponse.json({ error: 'Missing email or password' }, { status: 400 });
     }
 
-    // 1. Check if user already exists
+    if (typeof password !== "string" || password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters long" }, { status: 400 });
+    }
+
     const existingUser = await db.query.users.findFirst({
-      where: eq(users.email, email)
+      where: eq(users.email, normalizedEmail)
     });
 
     if (existingUser) {
-      return NextResponse.json({ error: 'User already exists' }, { status: 400 });
+      return NextResponse.json({ error: 'User already exists' }, { status: 409 });
     }
 
-    // 2. Hash password
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // 3. Create user with 5 bonus "Alpha Launch" credits
-    await db.insert(users).values({
-      email,
-      passwordHash,
-      credits: 5, // Give 5 free generations to test the OS
-      createdAt: new Date(),
-      updatedAt: new Date()
+    await db.transaction(async (tx) => {
+      const [user] = await tx.insert(users).values({
+        email: normalizedEmail,
+        passwordHash,
+        credits: 5,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }).returning({ id: users.id });
+
+      await tx.insert(credits).values({
+        creditsAvailable: 5,
+        creditsUsed: 0,
+        updatedAt: new Date(),
+        userId: user.id,
+      });
     });
 
     return NextResponse.json({
@@ -39,8 +51,8 @@ export async function POST(request: Request) {
       message: 'Account created successfully. You can now log in.'
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error('Registration Error:', error);
-    return NextResponse.json({ error: 'Internal server error', details: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error', details: getErrorMessage(error) }, { status: 500 });
   }
 }

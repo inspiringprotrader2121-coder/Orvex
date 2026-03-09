@@ -1,231 +1,579 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
-    ArrowLeft,
-    Copy,
-    Download,
-    CheckCircle2,
-    Rocket,
-    Sparkles,
-    Zap,
-    Clock,
-    ExternalLink,
-    Mail,
-    Search,
-    Hash
-} from 'lucide-react';
-import { useSocket } from '@/components/providers/socket-provider';
+  ArrowLeft,
+  Copy,
+  Download,
+  Flame,
+  Lightbulb,
+  Loader2,
+  Mail,
+  Radar,
+  Search,
+  Sparkles,
+  Swords,
+  Tag,
+  Zap,
+} from "lucide-react";
+import { useSocket } from "@/components/providers/socket-provider";
+import { getErrorMessage } from "@/lib/errors";
+import {
+  getProductName,
+  getWorkflowLabel,
+  isCompetitorAnalysisResult,
+  isLaunchPack,
+  isListingIntelligenceResult,
+  isOpportunityAnalysisResult,
+  isWorkflowFailureResult,
+  type WorkflowStatus,
+} from "@/lib/workflows";
+
+type WorkflowApiResponse = {
+  artifact?: unknown;
+  createdAt: string;
+  errorMessage?: string | null;
+  id: string;
+  inputData: unknown;
+  progress: number;
+  resultData: unknown;
+  status: WorkflowStatus;
+  type: string;
+};
+
+type ScorecardArtifact = {
+  id?: string;
+  listingScore: number;
+  seoScore: number;
+  conversionScore: number;
+  keywordCoverage: number;
+  emotionalHookScore?: number;
+  ctaStrength?: number;
+  strengths: string[];
+  weaknesses: string[];
+  keywordGaps: string[];
+  optimizedTitle: string;
+  optimizedDescription: string;
+  suggestedTags: string[];
+};
 
 export default function WorkflowResultsPage() {
-    const params = useParams();
-    const router = useRouter();
-    const id = params.id as string;
-    const { socket } = useSocket();
+  const params = useParams<{ id: string }>();
+  const { socket } = useSocket();
+  const id = params.id;
 
-    const [workflow, setWorkflow] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState("");
+  const [workflow, setWorkflow] = useState<WorkflowApiResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-    const fetchWorkflow = async () => {
-        try {
-            const res = await fetch(`/api/workflows/${id}`);
-            if (!res.ok) throw new Error("Failed to load results");
-            const data = await res.json();
-            setWorkflow(data);
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
+  const fetchWorkflow = useEffectEvent(async () => {
+    try {
+      const response = await fetch(`/api/workflows/${id}`);
+      if (!response.ok) {
+        throw new Error("Failed to load workflow");
+      }
+
+      const data = await response.json() as WorkflowApiResponse;
+      setWorkflow(data);
+      setError("");
+    } catch (fetchError) {
+      setError(getErrorMessage(fetchError, "Failed to load workflow"));
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  useEffect(() => {
+    void fetchWorkflow();
+  }, [id]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const handleUpdate = (data: { workflowId: string }) => {
+      if (data.workflowId === id) {
+        void fetchWorkflow();
+      }
     };
 
-    useEffect(() => {
-        fetchWorkflow();
-    }, [id]);
+    socket.on("workflow.updated", handleUpdate);
+    return () => {
+      socket.off("workflow.updated", handleUpdate);
+    };
+  }, [id, socket]);
 
-    useEffect(() => {
-        if (!socket) return;
-
-        const handleUpdate = (data: any) => {
-            if (data.workflowId === id) {
-                console.log("[Socket] Update for this workflow received:", data.status);
-                fetchWorkflow(); // Re-fetch the full data when status changes
-            }
-        };
-
-        socket.on("workflow.updated", handleUpdate);
-        return () => {
-            socket.off("workflow.updated", handleUpdate);
-        };
-    }, [socket, id]);
-
-    if (loading) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in duration-1000">
-                <div className="relative">
-                    <div className="h-24 w-24 rounded-full border-t-2 border-indigo-500 animate-spin"></div>
-                    <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 text-indigo-400" />
-                </div>
-                <h2 className="mt-8 text-2xl font-black text-white tracking-tight">Accessing Neural Layer</h2>
-                <p className="mt-2 text-gray-500 font-medium tracking-wide uppercase text-[10px]">Retrieving AI Generated Growth Assets</p>
-            </div>
-        );
+  const displayData = useMemo(() => {
+    if (!workflow) {
+      return null;
     }
 
-    if (error || !workflow) {
-        return (
-            <div className="p-12 text-center bg-rose-500/5 border border-rose-500/10 rounded-3xl">
-                <h2 className="text-xl font-bold text-rose-400 mb-2">Sync Error</h2>
-                <p className="text-gray-400 mb-6">{error || "Could not locate this generation session."}</p>
-                <Link href="/dashboard" className="text-white underline font-bold uppercase text-xs tracking-widest">Return to Dashboard</Link>
-            </div>
-        );
-    }
+    return workflow.artifact ?? workflow.resultData;
+  }, [workflow]);
 
-    const isProcessing = workflow.status === 'pending' || workflow.status === 'processing';
-    const data = workflow.resultData;
+  const listing = isListingIntelligenceResult(displayData) ? displayData as ScorecardArtifact : null;
+  const competitor = isCompetitorAnalysisResult(displayData) ? displayData : null;
+  const opportunity = isOpportunityAnalysisResult(displayData) ? displayData : null;
+  const launchPack = isLaunchPack(displayData) ? getLaunchPackData(displayData) : null;
+  const isProcessing = workflow ? ["pending", "processing", "queued"].includes(workflow.status) : false;
+  const workflowTitle = workflow ? getWorkflowTitle(workflow.inputData, workflow.artifact) : "Workflow";
 
+  if (loading) {
     return (
-        <div className="max-w-6xl mx-auto space-y-10 animate-in slide-in-from-bottom-4 duration-1000">
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                <div>
-                    <Link href="/dashboard" className="inline-flex items-center gap-2 text-gray-500 hover:text-white transition-colors mb-4 text-xs font-bold uppercase tracking-widest">
-                        <ArrowLeft className="w-3 h-3" /> Dashboard
-                    </Link>
-                    <h1 className="text-4xl font-black text-white tracking-tighter mb-2 flex items-center gap-4">
-                        {workflow.inputData?.productName || "Listing Optimization"}
-                        <span className={`text-[10px] uppercase font-black px-3 py-1 rounded-full ring-1 ${isProcessing ? 'bg-amber-500/10 text-amber-400 ring-amber-500/20 animate-pulse' : 'bg-indigo-500/10 text-indigo-400 ring-indigo-500/20'}`}>
-                            {workflow.status}
-                        </span>
-                    </h1>
-                    <p className="text-gray-400 font-medium">Generated via Orvex AI Engine v1.1</p>
-                </div>
-
-                {!isProcessing && (
-                    <div className="flex items-center gap-3">
-                        <button className="bg-white text-black px-6 py-3 rounded-xl font-bold text-sm shadow-xl shadow-white/5 hover:bg-gray-200 transition-all active:scale-95 flex items-center gap-2">
-                            <Download className="w-4 h-4" /> Export All
-                        </button>
-                    </div>
-                )}
-            </header>
-
-            {isProcessing ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                    <div className="bg-[#141417] border border-[#1C1C1F] p-10 rounded-3xl flex flex-col items-center text-center space-y-6">
-                        <div className="w-20 h-20 bg-indigo-500/10 rounded-full flex items-center justify-center border border-indigo-500/20">
-                            <Zap className="w-10 h-10 text-indigo-400 animate-pulse" />
-                        </div>
-                        <div className="space-y-2">
-                            <h3 className="text-2xl font-black text-white">Generating Impact...</h3>
-                            <p className="text-gray-400 text-sm max-w-sm mx-auto">
-                                Our engine is building your SEO titles, keywords, and marketing assets.
-                                This takes about 30-45 seconds.
-                            </p>
-                        </div>
-                        <div className="w-full max-w-xs h-1.5 bg-[#1C1C1F] rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-500 animate-progress origin-left"></div>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    {/* Left Column: Core Listing Info */}
-                    <div className="lg:col-span-2 space-y-8">
-                        <ResultSection title="Optimized Product Titles" icon={<Rocket className="w-4 h-4" />}>
-                            <div className="space-y-4">
-                                {data.seoTitles?.map((title: string, i: number) => (
-                                    <CopyBox key={i} text={title} />
-                                ))}
-                            </div>
-                        </ResultSection>
-
-                        <ResultSection title="High-Intent Description" icon={<Search className="w-4 h-4" />}>
-                            <div className="bg-[#1C1C1F]/50 border border-white/5 rounded-2xl p-6 relative group">
-                                <pre className="text-sm text-gray-300 leading-relaxed font-medium whitespace-pre-wrap font-sans">
-                                    {data.description}
-                                </pre>
-                                <CopyButton text={data.description} />
-                            </div>
-                        </ResultSection>
-
-                        <ResultSection title="3-Phase Email Sequence" icon={<Mail className="w-4 h-4" />}>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {data.emailSequence?.map((email: any, i: number) => (
-                                    <div key={i} className="bg-[#1C1C1F] border border-white/5 p-5 rounded-2xl">
-                                        <h4 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">{email.subject}</h4>
-                                        <p className="text-[11px] text-gray-400 line-clamp-3 mb-4">{email.body}</p>
-                                        <CopyButton text={`${email.subject}\n\n${email.body}`} block />
-                                    </div>
-                                ))}
-                            </div>
-                        </ResultSection>
-                    </div>
-
-                    {/* Right Column: Tags & Hooks */}
-                    <div className="space-y-8">
-                        <ResultSection title="Keyword Tags" icon={<Hash className="w-4 h-4" />}>
-                            <div className="flex flex-wrap gap-2">
-                                {data.keywordTags?.map((tag: string, i: number) => (
-                                    <span key={i} className="bg-[#1C1C1F] border border-white/5 px-3 py-1.5 rounded-lg text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                        {tag}
-                                    </span>
-                                ))}
-                            </div>
-                            <div className="mt-4">
-                                <CopyButton text={data.keywordTags?.join(", ")} block label="Copy All Tags" />
-                            </div>
-                        </ResultSection>
-
-                        <ResultSection title="Marketing Hooks" icon={<Zap className="w-4 h-4" />}>
-                            <div className="space-y-3">
-                                {data.marketingHooks?.map((hook: string, i: number) => (
-                                    <div key={i} className="text-xs text-gray-300 italic border-l-2 border-indigo-500/30 pl-4 py-1">
-                                        "{hook}"
-                                    </div>
-                                ))}
-                            </div>
-                        </ResultSection>
-                    </div>
-                </div>
-            )}
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-5">
+        <div className="rounded-full border border-indigo-500/20 bg-indigo-500/10 p-6">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-300" />
         </div>
+        <div className="space-y-2 text-center">
+          <h2 className="text-2xl font-black text-white">Loading workflow output</h2>
+          <p className="text-sm text-gray-400">Reading the latest worker state from ORVEX.</p>
+        </div>
+      </div>
     );
-}
+  }
 
-function ResultSection({ title, children, icon }: any) {
+  if (error || !workflow) {
     return (
-        <div className="space-y-5">
-            <div className="flex items-center gap-2 px-1">
-                <div className="bg-indigo-500/10 p-1.5 rounded-lg border border-indigo-500/20">{icon}</div>
-                <h2 className="text-sm font-black text-white uppercase tracking-widest">{title}</h2>
+      <div className="rounded-3xl border border-rose-500/20 bg-rose-500/10 p-10 text-center">
+        <h2 className="mb-3 text-2xl font-black text-white">Workflow unavailable</h2>
+        <p className="mx-auto max-w-xl text-sm text-gray-300">{error || "We could not find this workflow."}</p>
+        <Link href="/dashboard/workflows" className="mt-6 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black">
+          Back to workflows
+        </Link>
+      </div>
+    );
+  }
+
+  const failureMessage = isWorkflowFailureResult(workflow.resultData)
+    ? workflow.resultData.error
+    : workflow.errorMessage || "This workflow failed before ORVEX could persist a result.";
+
+  return (
+    <div className="space-y-10 animate-in fade-in duration-700">
+      <header className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-4">
+          <Link href="/dashboard/workflows" className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-gray-500 transition-colors hover:text-white">
+            <ArrowLeft className="h-3 w-3" />
+            Workflow History
+          </Link>
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-indigo-300">{getWorkflowLabel(workflow.type)}</p>
+            <h1 className="text-4xl font-black tracking-tight text-white">{workflowTitle}</h1>
+            <p className="text-sm text-gray-400">Created {new Date(workflow.createdAt).toLocaleString()}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <StatusBadge status={workflow.status} />
+          {listing && typeof (workflow.artifact as { id?: string } | undefined)?.id === "string" ? (
+            <a
+              href={`/api/listing-scorecards/${(workflow.artifact as { id: string }).id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-[#141417] px-5 py-3 text-sm font-bold text-white transition hover:border-white/20"
+            >
+              <Download className="h-4 w-4" />
+              Export Scorecard
+            </a>
+          ) : null}
+        </div>
+      </header>
+
+      {isProcessing ? (
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-indigo-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.25em] text-indigo-300">
+              <Sparkles className="h-3 w-3" />
+              Worker Active
             </div>
-            {children}
+            <h2 className="text-3xl font-black text-white">ORVEX is processing this workflow</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-400">
+              The request has been handed off to BullMQ. The worker is handling scraping, AI generation, persistence,
+              and will push status updates back here over the socket bridge.
+            </p>
+
+            <div className="mt-8 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                <span>Progress</span>
+                <span>{workflow.progress}%</span>
+              </div>
+              <div className="h-3 overflow-hidden rounded-full bg-[#0A0A0B]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 transition-all"
+                  style={{ width: `${Math.max(workflow.progress, 8)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+            <h3 className="text-lg font-bold text-white">Worker pipeline</h3>
+            <div className="mt-6 space-y-4">
+              <PipelineItem title="Queued" description="Job persisted in Redis and waiting for worker capacity." />
+              <PipelineItem title="Processing" description="Worker is executing scraping, AI calls, and persistence." />
+              <PipelineItem title="Completed" description="Results are saved in PostgreSQL and pushed back to the dashboard." />
+            </div>
+          </div>
         </div>
-    )
+      ) : null}
+
+      {!isProcessing && workflow.status === "failed" ? (
+        <div className="rounded-[2rem] border border-rose-500/20 bg-rose-500/10 p-8">
+          <h2 className="text-2xl font-black text-white">Workflow failed</h2>
+          <p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-300">{failureMessage}</p>
+          <Link href="/dashboard/workflows/new" className="mt-6 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black">
+            Start another workflow
+          </Link>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && listing ? (
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <MetricCard label="Listing Score" value={listing.listingScore} accent="text-indigo-300" />
+            <MetricCard label="SEO" value={listing.seoScore} accent="text-sky-300" />
+            <MetricCard label="Conversion" value={listing.conversionScore} accent="text-emerald-300" />
+            <MetricCard label="Coverage" value={listing.keywordCoverage} accent="text-amber-300" />
+            <MetricCard label="Hook" value={listing.emotionalHookScore ?? 0} accent="text-orange-300" />
+            <MetricCard label="CTA" value={listing.ctaStrength ?? 0} accent="text-fuchsia-300" />
+          </div>
+
+          <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="space-y-8">
+              <ResultSection title="Optimized Title" icon={<Search className="h-4 w-4" />}>
+                <CopyBlock text={listing.optimizedTitle} />
+              </ResultSection>
+              <ResultSection title="Optimized Description" icon={<Sparkles className="h-4 w-4" />}>
+                <CopyBlock text={listing.optimizedDescription} multiline />
+              </ResultSection>
+              <ResultSection title="Keyword Gaps" icon={<Tag className="h-4 w-4" />}>
+                <TagList items={listing.keywordGaps} />
+              </ResultSection>
+              <ResultSection title="Suggested Tags" icon={<Zap className="h-4 w-4" />}>
+                <TagList items={listing.suggestedTags} />
+              </ResultSection>
+            </div>
+
+            <div className="space-y-8">
+              <ResultSection title="Strengths" icon={<Sparkles className="h-4 w-4" />}>
+                <BulletList items={listing.strengths} />
+              </ResultSection>
+              <ResultSection title="Weaknesses" icon={<Radar className="h-4 w-4" />}>
+                <BulletList items={listing.weaknesses} />
+              </ResultSection>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && competitor ? (
+        <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-8">
+            <ResultSection title="Differentiation Strategy" icon={<Swords className="h-4 w-4" />}>
+              <CopyBlock text={competitor.differentiationStrategy} multiline />
+            </ResultSection>
+            <ResultSection title="Keyword Opportunities" icon={<Tag className="h-4 w-4" />}>
+              <TagList items={competitor.keywordOpportunities} />
+            </ResultSection>
+          </div>
+          <div className="space-y-8">
+            <ResultSection title="Competitor Strengths" icon={<Sparkles className="h-4 w-4" />}>
+              <BulletList items={competitor.strengths} />
+            </ResultSection>
+            <ResultSection title="Competitor Weaknesses" icon={<Radar className="h-4 w-4" />}>
+              <BulletList items={competitor.weaknesses} />
+            </ResultSection>
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && opportunity ? (
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            <MetricCard label="Demand" value={opportunity.demandScore} accent="text-emerald-300" />
+            <MetricCard label="Competition" value={opportunity.competitionScore} accent="text-rose-300" />
+            <MetricCard label="Trend" value={opportunity.trendScore} accent="text-sky-300" />
+            <MetricCard label="Opportunity" value={opportunity.opportunityScore} accent="text-indigo-300" />
+          </div>
+
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+            <div className="mb-6 flex items-center gap-3">
+              <div className="rounded-2xl bg-indigo-500/10 p-3">
+                <Lightbulb className="h-5 w-5 text-indigo-300" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-black text-white">Product ideas</h2>
+                <p className="text-sm text-gray-400">Structured opportunities generated from this niche.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {opportunity.productIdeas.map((idea) => (
+                <div key={idea.name} className="rounded-3xl border border-white/5 bg-[#0A0A0B] p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{idea.name}</h3>
+                      <p className="mt-2 text-sm leading-relaxed text-gray-400">{idea.description}</p>
+                    </div>
+                    <span className="rounded-full bg-indigo-500/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">
+                      {idea.opportunityScore}
+                    </span>
+                  </div>
+                  <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+                    <MiniMetric label="Demand" value={idea.demandScore} />
+                    <MiniMetric label="Competition" value={idea.competitionScore} />
+                    <MiniMetric label="Opportunity" value={idea.opportunityScore} />
+                  </div>
+                  <Link
+                    href={`/dashboard/workflows/new?mode=launch`}
+                    className="mt-5 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-indigo-300"
+                  >
+                    Build launch pack
+                    <ArrowLeft className="h-3 w-3 rotate-180" />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && launchPack ? (
+        <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-8">
+            <ResultSection title="SEO Titles" icon={<Flame className="h-4 w-4" />}>
+              <div className="space-y-3">
+                {launchPack.seoTitles.map((title) => (
+                  <CopyBlock key={title} text={title} />
+                ))}
+              </div>
+            </ResultSection>
+
+            <ResultSection title="Optimized Description" icon={<Search className="h-4 w-4" />}>
+              <CopyBlock text={launchPack.optimizedDescription} multiline />
+            </ResultSection>
+
+            <ResultSection title="FAQ" icon={<Sparkles className="h-4 w-4" />}>
+              <div className="space-y-4">
+                {launchPack.faq.map((item) => (
+                  <div key={item.q} className="rounded-3xl border border-white/5 bg-[#141417] p-5">
+                    <p className="text-sm font-bold text-white">{item.q}</p>
+                    <p className="mt-2 text-sm leading-relaxed text-gray-400">{item.a}</p>
+                  </div>
+                ))}
+              </div>
+            </ResultSection>
+
+            <ResultSection title="Email Launch Sequence" icon={<Mail className="h-4 w-4" />}>
+              <div className="grid gap-4 md:grid-cols-2">
+                {launchPack.emailLaunchSequence.map((item) => (
+                  <div key={item.subject} className="rounded-3xl border border-white/5 bg-[#141417] p-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">{item.subject}</p>
+                    <p className="mt-3 text-sm leading-relaxed text-gray-400">{item.body}</p>
+                    <CopyButton text={`${item.subject}\n\n${item.body}`} className="mt-4" label="Copy Email" />
+                  </div>
+                ))}
+              </div>
+            </ResultSection>
+          </div>
+
+          <div className="space-y-8">
+            <ResultSection title="Keyword Tags" icon={<Tag className="h-4 w-4" />}>
+              <TagList items={launchPack.keywordTags} />
+            </ResultSection>
+
+            <ResultSection title="TikTok Hooks" icon={<Zap className="h-4 w-4" />}>
+              <BulletList items={launchPack.tikTokHooks} />
+            </ResultSection>
+
+            <ResultSection title="Pinterest Captions" icon={<Sparkles className="h-4 w-4" />}>
+              <BulletList items={launchPack.pinterestCaptions} />
+            </ResultSection>
+
+            <ResultSection title="14-Day Launch Calendar" icon={<Radar className="h-4 w-4" />}>
+              <div className="space-y-3">
+                {launchPack.launchCalendar.map((item) => (
+                  <div key={`${item.day}-${item.task}`} className="rounded-3xl border border-white/5 bg-[#141417] p-4">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Day {item.day}</p>
+                    <p className="mt-2 text-sm font-semibold text-white">{item.objective}</p>
+                    <p className="mt-1 text-sm text-gray-400">{item.task}</p>
+                  </div>
+                ))}
+              </div>
+            </ResultSection>
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && !listing && !competitor && !opportunity && !launchPack ? (
+        <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+          <h2 className="text-2xl font-black text-white">Raw workflow output</h2>
+          <p className="mt-3 text-sm text-gray-400">
+            This workflow completed, but the dashboard does not yet have a custom renderer for its artifact.
+          </p>
+          <pre className="mt-6 overflow-x-auto rounded-3xl bg-[#0A0A0B] p-5 text-xs text-gray-300">
+            {JSON.stringify(displayData, null, 2)}
+          </pre>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
-function CopyBox({ text }: { text: string }) {
-    return (
-        <div className="flex items-center justify-between bg-[#1C1C1F] border border-white/5 p-4 rounded-2xl group hover:border-[#232326] transition-all">
-            <span className="text-sm text-gray-300 font-medium truncate pr-4">{text}</span>
-            <button onClick={() => navigator.clipboard.writeText(text)} className="p-2 bg-[#0A0A0B] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                <Copy className="w-4 h-4 text-gray-500 hover:text-white" />
-            </button>
-        </div>
-    )
+function getLaunchPackData(value: unknown) {
+  const record = value as {
+    emailLaunchSequence: Array<{ body: string; subject: string }>;
+    faq: Array<{ a: string; q: string }>;
+    keywordTags: string[];
+    launchCalendar: Array<{ day: number; objective: string; task: string }>;
+    optimizedDescription: string;
+    pinterestCaptions: string[];
+    seoTitles: string[];
+    tikTokHooks: string[];
+  };
+
+  return {
+    emailLaunchSequence: record.emailLaunchSequence,
+    faq: record.faq,
+    keywordTags: record.keywordTags,
+    launchCalendar: record.launchCalendar,
+    optimizedDescription: record.optimizedDescription,
+    pinterestCaptions: record.pinterestCaptions,
+    seoTitles: record.seoTitles,
+    tikTokHooks: record.tikTokHooks,
+  };
 }
 
-function CopyButton({ text, block, label }: { text: string, block?: boolean, label?: string }) {
-    return (
-        <button
-            onClick={() => navigator.clipboard.writeText(text)}
-            className={`${block ? 'w-full' : 'absolute top-4 right-4'} bg-[#0A0A0B] border border-white/5 px-3 py-1.5 rounded-lg text-[10px] font-black text-gray-500 hover:text-white transition-all flex items-center justify-center gap-2 uppercase tracking-widest`}
-        >
-            <Copy className="w-3 h-3" /> {label || 'Copy'}
-        </button>
-    )
+function getWorkflowTitle(inputData: unknown, artifact: unknown) {
+  if (artifact && typeof artifact === "object") {
+    const record = artifact as Record<string, unknown>;
+    if (typeof record.listingTitle === "string" && record.listingTitle.trim()) {
+      return record.listingTitle;
+    }
+    if (typeof record.keyword === "string" && record.keyword.trim()) {
+      return record.keyword;
+    }
+    if (typeof record.ideaName === "string" && record.ideaName.trim()) {
+      return record.ideaName;
+    }
+  }
+
+  return getProductName(inputData);
+}
+
+function StatusBadge({ status }: { status: WorkflowStatus }) {
+  const styles: Record<WorkflowStatus, string> = {
+    completed: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
+    failed: "bg-rose-500/10 text-rose-300 border-rose-500/20",
+    pending: "bg-white/5 text-gray-300 border-white/10",
+    processing: "bg-amber-500/10 text-amber-300 border-amber-500/20",
+    queued: "bg-sky-500/10 text-sky-300 border-sky-500/20",
+  };
+
+  return (
+    <span className={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] ${styles[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function PipelineItem({ description, title }: { description: string; title: string }) {
+  return (
+    <div className="rounded-3xl border border-white/5 bg-[#0A0A0B] p-5">
+      <p className="text-sm font-bold text-white">{title}</p>
+      <p className="mt-2 text-sm leading-relaxed text-gray-400">{description}</p>
+    </div>
+  );
+}
+
+function MetricCard({ accent, label, value }: { accent: string; label: string; value: number }) {
+  return (
+    <div className="rounded-3xl border border-white/5 bg-[#141417] p-5">
+      <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gray-500">{label}</p>
+      <p className={`mt-4 text-4xl font-black ${accent}`}>{value}</p>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-[#141417] px-3 py-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">{label}</p>
+      <p className="mt-2 text-lg font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function ResultSection({ children, icon, title }: { children: ReactNode; icon: ReactNode; title: string }) {
+  return (
+    <section className="space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-indigo-500/10 p-3 text-indigo-300">{icon}</div>
+        <h2 className="text-xl font-black text-white">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function BulletList({ items }: { items: string[] }) {
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item} className="rounded-3xl border border-white/5 bg-[#141417] px-5 py-4 text-sm leading-relaxed text-gray-300">
+          {item}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TagList({ items }: { items: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item) => (
+        <span key={item} className="rounded-full border border-white/10 bg-[#0A0A0B] px-3 py-2 text-xs font-semibold text-gray-300">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CopyBlock({ multiline = false, text }: { multiline?: boolean; text: string }) {
+  return (
+    <div className="relative rounded-3xl border border-white/5 bg-[#141417] p-5">
+      <CopyButton text={text} className="absolute right-4 top-4" label="Copy" />
+      {multiline ? (
+        <pre className="whitespace-pre-wrap pr-16 font-sans text-sm leading-relaxed text-gray-300">{text}</pre>
+      ) : (
+        <p className="pr-16 text-sm text-gray-300">{text}</p>
+      )}
+    </div>
+  );
+}
+
+function CopyButton({
+  className = "",
+  label,
+  text,
+}: {
+  className?: string;
+  label: string;
+  text: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => void navigator.clipboard.writeText(text)}
+      className={`inline-flex items-center gap-2 rounded-full border border-white/10 bg-[#0A0A0B] px-3 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-gray-300 ${className}`}
+    >
+      <Copy className="h-3 w-3" />
+      {label}
+    </button>
+  );
 }

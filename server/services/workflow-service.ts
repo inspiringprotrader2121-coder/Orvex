@@ -1,0 +1,217 @@
+import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { workflowBatches, workflows } from "@/lib/db/schema";
+import { notifyJobUpdate } from "@/lib/socket-internal";
+import { getErrorMessage } from "@/lib/errors";
+import { enqueueWorkflowJob, type OrvexWorkflowJob } from "@server/queues/workflow-queue";
+import { env } from "@server/utils/env";
+import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
+import { CreditAccountService } from "./credit-service";
+
+type StartWorkflowInput = {
+  creditsCost: number;
+  inputData: Record<string, unknown>;
+  job: Omit<OrvexWorkflowJob, "workflowId">;
+  projectId?: string;
+  skipRateLimit?: boolean;
+  sourceProvider?: "amazon" | "etsy" | "gumroad" | "internal" | "shopify";
+  sourceUrl?: string;
+};
+
+export class WorkflowService {
+  static async assertSubmissionRateLimit(userId: string) {
+    const since = new Date(Date.now() - env.submissionLookbackMinutes * 60_000);
+
+    const [recentCount] = await db
+      .select({ count: count() })
+      .from(workflows)
+      .where(and(eq(workflows.userId, userId), gte(workflows.createdAt, since)));
+
+    if ((recentCount?.count ?? 0) >= env.submissionMaxPerWindow) {
+      throw new RateLimitExceededError();
+    }
+  }
+
+  static async startWorkflow(userId: string, input: StartWorkflowInput) {
+    if (!input.skipRateLimit) {
+      await this.assertSubmissionRateLimit(userId);
+    }
+
+    let workflowId: string | null = null;
+
+    try {
+      await CreditAccountService.deductCredits({
+        amount: input.creditsCost,
+        metadata: { workflowType: input.job.type },
+        reason: `Workflow: ${input.job.type}`,
+        userId,
+      });
+    } catch (error) {
+      if (error instanceof InsufficientCreditsError) {
+        throw error;
+      }
+      throw new Error(`Unable to reserve credits: ${getErrorMessage(error)}`);
+    }
+
+    try {
+      const [workflow] = await db.insert(workflows).values({
+        creditsSpent: input.creditsCost,
+        inputData: input.inputData,
+        progress: 0,
+        projectId: input.projectId ?? null,
+        sourceProvider: input.sourceProvider ?? "internal",
+        sourceUrl: input.sourceUrl ?? null,
+        status: "queued",
+        type: input.job.type,
+        userId,
+      }).returning({ id: workflows.id });
+
+      workflowId = workflow.id;
+      const queuedJob = {
+        ...input.job,
+        workflowId,
+      } as OrvexWorkflowJob;
+
+      await enqueueWorkflowJob(queuedJob);
+
+      notifyJobUpdate(userId, workflowId, "queued");
+      return workflowId;
+    } catch (error) {
+      await CreditAccountService.addCredits({
+        amount: input.creditsCost,
+        metadata: { workflowType: input.job.type },
+        reason: `Refund: ${input.job.type} failed to enqueue`,
+        revertUsage: true,
+        userId,
+        workflowId: workflowId ?? undefined,
+      });
+
+      if (workflowId) {
+        await db.update(workflows)
+          .set({
+            errorMessage: getErrorMessage(error),
+            progress: 0,
+            status: "failed",
+            updatedAt: new Date(),
+          })
+          .where(eq(workflows.id, workflowId));
+      }
+
+      throw error;
+    }
+  }
+
+  static async markProcessing(workflowId: string, progress = 15) {
+    const [workflow] = await db.update(workflows)
+      .set({
+        progress,
+        status: "processing",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflows.id, workflowId))
+      .returning({ userId: workflows.userId });
+
+    if (workflow) {
+      notifyJobUpdate(workflow.userId, workflowId, "processing");
+    }
+  }
+
+  static async markCompleted(workflowId: string, resultData: Record<string, unknown>) {
+    const [workflow] = await db.update(workflows)
+      .set({
+        errorMessage: null,
+        progress: 100,
+        resultData,
+        status: "completed",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflows.id, workflowId))
+      .returning({ batchId: workflows.batchId, userId: workflows.userId });
+
+    if (workflow) {
+      notifyJobUpdate(workflow.userId, workflowId, "completed");
+      if (workflow.batchId) {
+        await this.bumpBatchCounters(workflow.batchId, "completed");
+      }
+    }
+  }
+
+  static async markFailed(workflowId: string, error: unknown) {
+    const message = getErrorMessage(error, "Workflow execution failed");
+    const [workflow] = await db.update(workflows)
+      .set({
+        errorMessage: message,
+        progress: 100,
+        resultData: { error: message },
+        status: "failed",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflows.id, workflowId))
+      .returning({ batchId: workflows.batchId, userId: workflows.userId });
+
+    if (workflow) {
+      notifyJobUpdate(workflow.userId, workflowId, "failed");
+      if (workflow.batchId) {
+        await this.bumpBatchCounters(workflow.batchId, "failed");
+      }
+    }
+  }
+
+  static async createBatch(userId: string, fileName: string, totalJobs: number) {
+    const [batch] = await db.insert(workflowBatches).values({
+      completedJobs: 0,
+      failedJobs: 0,
+      fileName,
+      status: "pending",
+      totalJobs,
+      userId,
+    }).returning({ id: workflowBatches.id });
+
+    return batch.id;
+  }
+
+  static async attachWorkflowToBatch(workflowId: string, batchId: string) {
+    await db.update(workflows)
+      .set({ batchId, updatedAt: new Date() })
+      .where(eq(workflows.id, workflowId));
+  }
+
+  static async listRecentWorkflows(userId: string, limit = 20) {
+    return db.query.workflows.findMany({
+      where: eq(workflows.userId, userId),
+      limit,
+      orderBy: [desc(workflows.createdAt)],
+    });
+  }
+
+  private static async bumpBatchCounters(batchId: string, outcome: "completed" | "failed") {
+    const [updated] = await db.update(workflowBatches)
+      .set({
+        completedJobs: outcome === "completed" ? sql`${workflowBatches.completedJobs} + 1` : workflowBatches.completedJobs,
+        failedJobs: outcome === "failed" ? sql`${workflowBatches.failedJobs} + 1` : workflowBatches.failedJobs,
+        updatedAt: new Date(),
+      })
+      .where(eq(workflowBatches.id, batchId))
+      .returning({
+        completedJobs: workflowBatches.completedJobs,
+        failedJobs: workflowBatches.failedJobs,
+        totalJobs: workflowBatches.totalJobs,
+      });
+
+    if (!updated) {
+      return;
+    }
+
+    const finalStatus =
+      updated.completedJobs + updated.failedJobs >= updated.totalJobs
+        ? (updated.failedJobs > 0 ? "failed" : "completed")
+        : "processing";
+
+    await db.update(workflowBatches)
+      .set({
+        status: finalStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(workflowBatches.id, batchId));
+  }
+}

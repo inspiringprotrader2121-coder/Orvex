@@ -1,8 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import { useSession } from "next-auth/react";
+import { getErrorMessage } from "@/lib/errors";
 
 type SocketContextType = {
     socket: Socket | null;
@@ -17,41 +18,63 @@ const SocketContext = createContext<SocketContextType>({
 export const useSocket = () => useContext(SocketContext);
 
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
-    const [socket, setSocket] = useState<Socket | null>(null);
+    const socketRef = useRef<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const { data: session } = useSession();
 
     useEffect(() => {
-        // Only connect if user is authenticated
-        if (!session?.user?.id) return;
-
-        const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001", {
-            reconnectionAttempts: 5,
-        });
-
-        socketInstance.on("connect", () => {
-            console.log("[Socket] Connected to bridge");
-            setIsConnected(true);
-            // Join user-specific room
-            if (session?.user?.id) {
-                socketInstance.emit("join", session.user.id);
-            }
-        });
-
-        socketInstance.on("disconnect", () => {
-            console.log("[Socket] Disconnected from bridge");
+        if (!session?.user?.id) {
+            socketRef.current?.disconnect();
+            socketRef.current = null;
             setIsConnected(false);
-        });
+            return;
+        }
 
-        setSocket(socketInstance);
+        let cancelled = false;
+
+        const connectSocket = async () => {
+            try {
+                const response = await fetch("/api/socket/token");
+                if (!response.ok) {
+                    throw new Error("Failed to create socket session");
+                }
+
+                const { token } = await response.json() as { token: string };
+                if (cancelled) {
+                    return;
+                }
+
+                const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001", {
+                    auth: { token },
+                    reconnectionAttempts: 5,
+                });
+
+                socketRef.current = socketInstance;
+
+                socketInstance.on("connect", () => {
+                    setIsConnected(true);
+                });
+
+                socketInstance.on("disconnect", () => {
+                    setIsConnected(false);
+                });
+            } catch (error) {
+                console.error("[Socket] Failed to initialize:", getErrorMessage(error));
+                setIsConnected(false);
+            }
+        };
+
+        void connectSocket();
 
         return () => {
-            socketInstance.disconnect();
+            cancelled = true;
+            socketRef.current?.disconnect();
+            socketRef.current = null;
         };
     }, [session?.user?.id]);
 
     return (
-        <SocketContext.Provider value={{ socket, isConnected }}>
+        <SocketContext.Provider value={{ socket: socketRef.current, isConnected }}>
             {children}
         </SocketContext.Provider>
     );
