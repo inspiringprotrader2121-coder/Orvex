@@ -1,20 +1,28 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { CreditService } from "@/lib/credits";
+import { getRequiredServerEnv } from "@/lib/server-env";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "dummy_key_for_build");
+function getStripeClient() {
+    return new Stripe(getRequiredServerEnv("STRIPE_SECRET_KEY"));
+}
 
 export async function POST(req: Request) {
     const body = await req.text();
-    const signature = req.headers.get("stripe-signature") as string;
+    const signature = req.headers.get("stripe-signature");
+
+    if (!signature) {
+        return NextResponse.json({ error: "Missing Stripe signature" }, { status: 400 });
+    }
 
     let event: Stripe.Event;
 
     try {
+        const stripe = getStripeClient();
         event = stripe.webhooks.constructEvent(
             body,
             signature,
-            process.env.STRIPE_WEBHOOK_SECRET as string
+            getRequiredServerEnv("STRIPE_WEBHOOK_SECRET"),
         );
     } catch (error) {
         console.error(`Webhook signature verification failed: ${error instanceof Error ? error.message : "Unknown error"}`);

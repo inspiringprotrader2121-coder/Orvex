@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
+import { getRequiredServerEnv } from "@/lib/server-env";
 
 const globalForDb = global as unknown as {
   db: ReturnType<typeof drizzle<typeof schema>> | undefined
@@ -10,7 +11,7 @@ const globalForDb = global as unknown as {
 const getPool = () => {
   if (!globalForDb.pool) {
     globalForDb.pool = new Pool({
-      connectionString: process.env.DATABASE_URL || 'postgresql://launchlayer:launchlayer_secret@localhost:5432/launchlayer',
+      connectionString: getRequiredServerEnv("DATABASE_URL"),
     });
   }
   return globalForDb.pool;

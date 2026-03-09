@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { parse as parseCsv } from "csv-parse/sync";
 import { ZodError } from "zod";
 import { auth } from "@/auth";
-import { getErrorMessage } from "@/lib/errors";
 import {
   BulkGenerationInputSchema,
   BulkLaunchRowSchema,
@@ -101,6 +100,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 429 });
     }
 
-    return NextResponse.json({ error: getErrorMessage(error, "Unable to queue bulk generation") }, { status: 500 });
+    return NextResponse.json({ error: "Unable to queue bulk generation" }, { status: 500 });
   }
 }

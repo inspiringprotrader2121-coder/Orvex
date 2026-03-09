@@ -1,8 +1,12 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { getErrorMessage } from "@/lib/errors";
+import {
+  AuthRateLimitError,
+  assertLoginAttemptAllowed,
+  clearFailedLoginAttempts,
+  recordFailedLoginAttempt,
+} from "@/lib/auth-rate-limit";
 import bcrypt from "bcryptjs";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -13,32 +17,51 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, request) {
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
-        const email = String(credentials.email).trim().toLowerCase();
-        const password = String(credentials.password);
+        try {
+          const email = String(credentials.email).trim().toLowerCase();
+          const password = String(credentials.password);
+          await assertLoginAttemptAllowed(request, email);
+          const [{ db }, { users }, { eq }] = await Promise.all([
+            import("@/lib/db"),
+            import("@/lib/db/schema"),
+            import("drizzle-orm"),
+          ]);
 
-        const user = await db.query.users.findFirst({
-          where: eq(users.email, email),
-        });
+          const user = await db.query.users.findFirst({
+            where: eq(users.email, email),
+          });
 
-        if (!user || !user.passwordHash) {
-          return null;
+          if (!user || !user.passwordHash) {
+            await recordFailedLoginAttempt(request, email);
+            return null;
+          }
+
+          const isValid = await bcrypt.compare(password, user.passwordHash);
+
+          if (!isValid) {
+            await recordFailedLoginAttempt(request, email);
+            return null;
+          }
+
+          await clearFailedLoginAttempts(request, email);
+
+          return {
+            id: user.id,
+            email: user.email,
+          };
+        } catch (error) {
+          if (error instanceof AuthRateLimitError) {
+            throw error;
+          }
+
+          console.error("Credentials authorize failed:", getErrorMessage(error));
+          throw new Error("AUTH_SERVICE_UNAVAILABLE");
         }
-
-        const isValid = await bcrypt.compare(password, user.passwordHash);
-
-        if (!isValid) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-        };
       },
     }),
   ],
@@ -60,4 +83,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: "/login",
     error: "/login",
   },
+  secret: process.env.AUTH_SECRET,
 });

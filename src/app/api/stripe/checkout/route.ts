@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/auth";
-import { getErrorMessage } from "@/lib/errors";
+import { getRequiredServerEnv } from "@/lib/server-env";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "dummy_key_for_build");
+function getStripeClient() {
+    return new Stripe(getRequiredServerEnv("STRIPE_SECRET_KEY"));
+}
 
 export async function POST() {
     const session = await auth();
@@ -14,6 +16,7 @@ export async function POST() {
     }
 
     try {
+        const stripe = getStripeClient();
         const checkoutSession = await stripe.checkout.sessions.create({
             payment_method_types: ["card"],
             metadata: {
@@ -42,6 +45,6 @@ export async function POST() {
         return NextResponse.json({ url: checkoutSession.url });
     } catch (error) {
         console.error("Stripe Checkout Error:", error);
-        return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
+        return NextResponse.json({ error: "Unable to start checkout" }, { status: 500 });
     }
 }

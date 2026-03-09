@@ -1,8 +1,11 @@
 import jwt from 'jsonwebtoken';
 import type { JwtPayload, SignOptions } from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { getRequiredServerEnv } from "@/lib/server-env";
 
-const JWT_SECRET = process.env.JWT_SECRET || process.env.AUTH_SECRET || 'super-secret-development-key-change-in-production';
+function getJwtSecret() {
+  return process.env.JWT_SECRET?.trim() || getRequiredServerEnv("AUTH_SECRET");
+}
 
 export type SocketTokenRole = "internal" | "user";
 
@@ -21,12 +24,12 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 export function signToken(payload: object, expiresIn: SignOptions["expiresIn"] = '1d'): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn });
 }
 
 export function verifyToken<T extends JwtPayload = JwtPayload>(token: string): T | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as T;
+    return jwt.verify(token, getJwtSecret()) as T;
   } catch {
     return null;
   }

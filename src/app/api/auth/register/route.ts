@@ -1,14 +1,27 @@
 import { NextResponse } from 'next/server';
 import { db } from "@/lib/db";
 import { credits, users } from "@/lib/db/schema";
+import { consumeRegisterAttempt } from "@/lib/auth-rate-limit";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { getErrorMessage } from "@/lib/errors";
 
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const rateLimit = await consumeRegisterAttempt(request, normalizedEmail || "anonymous");
+
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Too many registration attempts. Please try again later." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(rateLimit.retryAfterSeconds),
+          },
+        },
+      );
+    }
 
     if (!normalizedEmail || !password) {
       return NextResponse.json({ error: 'Missing email or password' }, { status: 400 });
@@ -53,6 +66,6 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error('Registration Error:', error);
-    return NextResponse.json({ error: 'Internal server error', details: getErrorMessage(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

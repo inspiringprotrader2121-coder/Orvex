@@ -1,6 +1,6 @@
 {
   "name": "launchlayer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,6 +15,7 @@
     "csv-parse": "^6.1.0",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.1",
+    "ioredis": "^5.10.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",

@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { auth } from "@/auth";
-import { getErrorMessage } from "@/lib/errors";
 import { WorkflowReadService } from "@server/services/workflow-read-service";
 
 export async function GET(
@@ -29,6 +28,6 @@ export async function GET(
 
     } catch (error) {
         console.error('Workflow Fetch Error:', error);
-        return NextResponse.json({ error: getErrorMessage(error, 'Internal error') }, { status: 500 });
+        return NextResponse.json({ error: 'Internal error' }, { status: 500 });
     }
 }

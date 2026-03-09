@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { auth } from "@/auth";
-import { getErrorMessage } from "@/lib/errors";
 import { WorkflowSubmissionService } from "@server/services/workflow-submission-service";
 import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
 
@@ -37,6 +36,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 429 });
     }
 
-    return NextResponse.json({ error: getErrorMessage(error, "Unable to queue launch pack") }, { status: 500 });
+    return NextResponse.json({ error: "Unable to queue launch pack" }, { status: 500 });
   }
 }

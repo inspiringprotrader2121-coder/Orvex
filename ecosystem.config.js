@@ -2,6 +2,8 @@ module.exports = {
   apps: [
     {
       name: 'orvex-web',
+      cwd: __dirname,
+      env_file: '.env',
       script: 'node_modules/next/dist/bin/next',
       args: 'start',
       instances: 'max',
@@ -13,6 +15,8 @@ module.exports = {
     },
     {
       name: 'orvex-worker',
+      cwd: __dirname,
+      env_file: '.env',
       script: 'node_modules/tsx/dist/cli.mjs',
       args: 'src/worker.ts',
       env: {
@@ -22,6 +26,8 @@ module.exports = {
     },
     {
       name: 'orvex-socket',
+      cwd: __dirname,
+      env_file: '.env',
       script: 'node_modules/tsx/dist/cli.mjs',
       args: 'src/socket-server.ts',
       env: {

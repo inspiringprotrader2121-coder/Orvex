@@ -29,7 +29,8 @@ function toErrorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  return NextResponse.json({ error: getErrorMessage(error, "Unable to start workflow") }, { status: 500 });
+  console.error("Workflow submission failed:", getErrorMessage(error, "Unknown workflow error"));
+  return NextResponse.json({ error: "Unable to start workflow" }, { status: 500 });
 }
 
 export async function POST(request: Request) {
