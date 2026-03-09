@@ -6,6 +6,7 @@ export const WorkflowTypeSchema = z.enum([
   "listing_intelligence",
   "competitor_analysis",
   "opportunity_analysis",
+  "listing_forge",
   "launch_pack_generation",
   "bulk_launch_generation",
   "etsy_listing_launch_pack",

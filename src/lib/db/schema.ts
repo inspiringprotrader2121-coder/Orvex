@@ -24,6 +24,7 @@ export const workflowTypeEnum = pgEnum("workflow_type", [
   "listing_intelligence",
   "competitor_analysis",
   "opportunity_analysis",
+  "listing_forge",
   "launch_pack_generation",
   "bulk_launch_generation",
   "etsy_listing_launch_pack",
@@ -225,6 +226,27 @@ export const launchPacks = pgTable("launch_packs", {
   userCreatedIdx: index("launch_packs_user_created_idx").on(table.userId, table.createdAt),
 }));
 
+export const listings = pgTable("listings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).unique().notNull(),
+  productName: text("product_name").notNull(),
+  targetAudience: text("target_audience").notNull(),
+  productType: text("product_type").notNull(),
+  tone: text("tone").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  tags: jsonb("tags").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  faq: jsonb("faq").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  workflowIdx: uniqueIndex("listings_workflow_idx").on(table.workflowId),
+  userCreatedIdx: index("listings_user_created_idx").on(table.userId, table.createdAt),
+  projectIdx: index("listings_project_idx").on(table.projectId),
+}));
+
 export const usersRelations = relations(users, ({ many, one }) => ({
   creditAccount: one(credits, { fields: [users.id], references: [credits.userId] }),
   projects: many(projects),
@@ -234,6 +256,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   competitorAnalyses: many(competitorAnalyses),
   opportunities: many(opportunities),
   launchPacks: many(launchPacks),
+  listings: many(listings),
   creditTransactions: many(creditTransactions),
 }));
 

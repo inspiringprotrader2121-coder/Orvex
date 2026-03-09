@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { CompetitorAnalysisSchema } from "@server/schemas/competitor-analysis";
 import type { LaunchPackSchema } from "@server/schemas/launch-pack";
+import type { ListingGeneratorResultSchema } from "@server/schemas/listing-generator";
 import type { ListingIntelligenceReportSchema } from "@server/schemas/listing-intelligence";
 import type { OpportunityAnalysisAiSchema } from "@server/schemas/opportunity";
 import type { WorkflowStatusSchema, WorkflowTypeSchema } from "@server/schemas/common";
@@ -11,6 +12,7 @@ export type WorkflowType = z.infer<typeof WorkflowTypeSchema>;
 export type ListingIntelligenceResult = z.infer<typeof ListingIntelligenceReportSchema>;
 export type CompetitorAnalysisResult = z.infer<typeof CompetitorAnalysisSchema>;
 export type LaunchPackResult = z.infer<typeof LaunchPackSchema>;
+export type ListingGeneratorResult = z.infer<typeof ListingGeneratorResultSchema>;
 export type OpportunityAnalysisResult = z.infer<typeof OpportunityAnalysisAiSchema> & {
   opportunityScore: number;
 };
@@ -22,6 +24,7 @@ export interface WorkflowFailureResult {
 export type WorkflowResultData =
   | CompetitorAnalysisResult
   | LaunchPackResult
+  | ListingGeneratorResult
   | ListingIntelligenceResult
   | OpportunityAnalysisResult
   | WorkflowFailureResult
@@ -38,6 +41,7 @@ const workflowLabels: Record<WorkflowType, string> = {
   competitor_analysis: "Competitor Analyzer",
   etsy_listing_launch_pack: "Etsy Launch Pack",
   launch_pack_generation: "Launch Pack",
+  listing_forge: "Listing Generator",
   listing_intelligence: "Listing Intelligence",
   opportunity_analysis: "Opportunity Engine",
 };
@@ -115,5 +119,16 @@ export function isOpportunityAnalysisResult(value: unknown): value is Opportunit
       "competitionScore" in value &&
       "demandScore" in value &&
       "productIdeas" in value,
+  );
+}
+
+export function isListingGeneratorResult(value: unknown): value is ListingGeneratorResult {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "title" in value &&
+      "description" in value &&
+      "tags" in value &&
+      Array.isArray((value as Record<string, unknown>).tags),
   );
 }

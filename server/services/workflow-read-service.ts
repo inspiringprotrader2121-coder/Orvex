@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import {
   competitorAnalyses,
   launchPacks,
+  listings,
   listingAnalyses,
   opportunities,
   workflows,
@@ -34,6 +35,12 @@ export class WorkflowReadService {
       case "opportunity_analysis": {
         const artifact = await db.query.opportunities.findFirst({
           where: eq(opportunities.workflowId, workflow.id),
+        });
+        return { artifact, workflow };
+      }
+      case "listing_forge": {
+        const artifact = await db.query.listings.findFirst({
+          where: eq(listings.workflowId, workflow.id),
         });
         return { artifact, workflow };
       }

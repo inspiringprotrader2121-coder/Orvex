@@ -1,4 +1,5 @@
 import { ListingUrlInputSchema } from "@server/schemas/listing-intelligence";
+import { ListingGeneratorInputSchema } from "@server/schemas/listing-generator";
 import { CompetitorAnalyzerInputSchema } from "@server/schemas/competitor-analysis";
 import { LaunchPackInputSchema } from "@server/schemas/launch-pack";
 import { OpportunityInputSchema } from "@server/schemas/opportunity";
@@ -26,6 +27,8 @@ export class WorkflowSubmissionService {
         return this.startCompetitorAnalysis(userId, submission.payload);
       case "opportunity_analysis":
         return this.startOpportunityAnalysis(userId, submission.payload);
+      case "listing_forge":
+        return this.startListingForge(userId, submission.payload);
       case "launch_pack_generation":
         return this.startLaunchPack(userId, submission.payload);
       default:
@@ -94,6 +97,27 @@ export class WorkflowSubmissionService {
     return {
       creditsCost: env.opportunityCreditCost,
       type: "opportunity_analysis",
+      workflowId,
+    };
+  }
+
+  static async startListingForge(userId: string, rawPayload: unknown): Promise<WorkflowStartResult> {
+    const payload = ListingGeneratorInputSchema.parse(rawPayload);
+    const workflowId = await WorkflowService.startWorkflow(userId, {
+      creditsCost: env.listingForgeCreditCost,
+      inputData: payload,
+      job: {
+        payload,
+        type: "listing_forge",
+        userId,
+      },
+      projectId: payload.projectId,
+      sourceProvider: "internal",
+    });
+
+    return {
+      creditsCost: env.listingForgeCreditCost,
+      type: "listing_forge",
       workflowId,
     };
   }

@@ -15,7 +15,7 @@ import {
   Swords,
 } from "lucide-react";
 
-type StudioMode = "bulk" | "competitor" | "launch" | "listing" | "opportunity";
+type StudioMode = "bulk" | "competitor" | "forge" | "launch" | "listing" | "opportunity";
 
 type WorkflowSubmission =
   | {
@@ -25,6 +25,15 @@ type WorkflowSubmission =
   | {
       payload: { keyword: string };
       type: "opportunity_analysis";
+    }
+  | {
+      payload: {
+        productName: string;
+        productType: string;
+        targetAudience: string;
+        tone: string;
+      };
+      type: "listing_forge";
     }
   | {
       payload: {
@@ -66,6 +75,13 @@ const studioModes: Array<{
     title: "Opportunity Engine",
   },
   {
+    cost: "3 credits",
+    description: "Generate an Etsy-ready digital product listing: SEO title, conversion description, tags, and FAQ.",
+    icon: Sparkles,
+    mode: "forge",
+    title: "Listing Generator",
+  },
+  {
     cost: "10 credits",
     description: "Generate the full launch pack: SEO, hooks, captions, emails, and a launch calendar.",
     icon: Flame,
@@ -95,6 +111,12 @@ export default function WorkflowStudioPage() {
   const [listingUrl, setListingUrl] = useState("");
   const [competitorUrl, setCompetitorUrl] = useState("");
   const [opportunityKeyword, setOpportunityKeyword] = useState("");
+  const [forgeForm, setForgeForm] = useState({
+    productName: "",
+    productType: "Digital template",
+    targetAudience: "",
+    tone: "Modern",
+  });
   const [launchForm, setLaunchForm] = useState({
     audience: "",
     category: "Digital Product",
@@ -307,6 +329,62 @@ export default function WorkflowStudioPage() {
               onChange={setOpportunityKeyword}
             />
             <SubmitButton pending={pendingMode === "opportunity"} label="Generate Opportunity Report" />
+          </form>
+        ) : null}
+
+        {activeMode === "forge" ? (
+          <form
+            className="space-y-8"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitWorkflow({
+                payload: {
+                  productName: forgeForm.productName.trim(),
+                  productType: forgeForm.productType.trim(),
+                  targetAudience: forgeForm.targetAudience.trim(),
+                  tone: forgeForm.tone.trim(),
+                },
+                type: "listing_forge",
+              }, "forge");
+            }}
+          >
+            <SectionHeader
+              eyebrow="Forge"
+              title="Generate a high-converting Etsy listing"
+              description="Feed ORVEX the product basics and get an SEO title, a conversion-focused description, Etsy tags, and FAQ copy ready to paste."
+            />
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <InputField
+                label="Product name"
+                placeholder="Minimalist dog mom planner bundle"
+                value={forgeForm.productName}
+                onChange={(value) => setForgeForm((current) => ({ ...current, productName: value }))}
+              />
+              <InputField
+                label="Product type"
+                placeholder="Printable planner, Notion template, Canva template"
+                value={forgeForm.productType}
+                onChange={(value) => setForgeForm((current) => ({ ...current, productType: value }))}
+              />
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <InputField
+                label="Target audience"
+                placeholder="Etsy shoppers, first-time dog owners, new puppy gift buyers"
+                value={forgeForm.targetAudience}
+                onChange={(value) => setForgeForm((current) => ({ ...current, targetAudience: value }))}
+              />
+              <InputField
+                label="Tone"
+                placeholder="Modern, playful, luxe, minimal"
+                value={forgeForm.tone}
+                onChange={(value) => setForgeForm((current) => ({ ...current, tone: value }))}
+              />
+            </div>
+
+            <SubmitButton pending={pendingMode === "forge"} label="Generate Listing" />
           </form>
         ) : null}
 

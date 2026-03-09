@@ -31,6 +31,19 @@ export type OpportunityAnalysisJob = {
   workflowId: string;
 };
 
+export type ListingGeneratorJob = {
+  payload: {
+    productName: string;
+    targetAudience: string;
+    productType: string;
+    tone: string;
+    projectId?: string;
+  };
+  type: "listing_forge";
+  userId: string;
+  workflowId: string;
+};
+
 export type LaunchPackGenerationJob = {
   payload: {
     audience?: string;
@@ -50,6 +63,7 @@ export type OrvexWorkflowJob =
   | ListingIntelligenceJob
   | CompetitorAnalysisJob
   | OpportunityAnalysisJob
+  | ListingGeneratorJob
   | LaunchPackGenerationJob;
 
 export type OrvexWorkflowJobName = OrvexWorkflowJob["type"];

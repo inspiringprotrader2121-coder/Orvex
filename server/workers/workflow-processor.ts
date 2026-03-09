@@ -2,6 +2,7 @@ import type { Job } from "bullmq";
 import type { OrvexWorkflowJob } from "@server/queues/workflow-queue";
 import { CompetitorAnalysisService } from "@server/services/competitor-analysis-service";
 import { LaunchPackService } from "@server/services/launch-pack-service";
+import { ListingGeneratorService } from "@server/services/listing-generator-service";
 import { ListingIntelligenceService } from "@server/services/listing-intelligence-service";
 import { OpportunityService } from "@server/services/opportunity-service";
 import { WorkflowService } from "@server/services/workflow-service";
@@ -33,6 +34,19 @@ export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
       case "opportunity_analysis": {
         const result = await OpportunityService.process({
           keyword: job.data.payload.keyword,
+          userId: job.data.userId,
+          workflowId: job.data.workflowId,
+        });
+        await WorkflowService.markCompleted(job.data.workflowId, result as Record<string, unknown>);
+        return result;
+      }
+      case "listing_forge": {
+        const result = await ListingGeneratorService.process({
+          productName: job.data.payload.productName,
+          productType: job.data.payload.productType,
+          projectId: job.data.payload.projectId,
+          targetAudience: job.data.payload.targetAudience,
+          tone: job.data.payload.tone,
           userId: job.data.userId,
           workflowId: job.data.workflowId,
         });

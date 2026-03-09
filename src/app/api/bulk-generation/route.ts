@@ -10,6 +10,8 @@ import {
 import { BulkGenerationService } from "@server/services/bulk-generation-service";
 import { env } from "@server/utils/env";
 import { RateLimitExceededError } from "@server/utils/errors";
+import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
+import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 
 async function extractRows(request: Request): Promise<{
   fileName: string;
@@ -59,6 +61,16 @@ async function extractRows(request: Request): Promise<{
 }
 
 export async function POST(request: Request) {
+  try {
+    assertSameOrigin(request);
+  } catch (error) {
+    if (error instanceof InvalidOriginError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    console.error("Origin validation failed:", error);
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  }
+
   const session = await auth();
   const userId = session?.user?.id;
 
@@ -67,6 +79,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    await WorkflowAbuseService.assertBulkGeneration(request, userId);
     const payload = await extractRows(request);
 
     if (payload.rows.length > env.bulkLaunchMaxRows) {
@@ -97,7 +110,14 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof RateLimitExceededError) {
-      return NextResponse.json({ error: error.message }, { status: 429 });
+      const rateLimitHeaders = error.retryAfterSeconds
+        ? { "Retry-After": `${error.retryAfterSeconds}` }
+        : undefined;
+
+      return NextResponse.json({ error: error.message }, {
+        status: 429,
+        headers: rateLimitHeaders,
+      });
     }
 
     return NextResponse.json({ error: "Unable to queue bulk generation" }, { status: 500 });

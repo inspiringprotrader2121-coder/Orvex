@@ -6,9 +6,14 @@ export class InsufficientCreditsError extends Error {
 }
 
 export class RateLimitExceededError extends Error {
-  constructor(message = "Too many workflow submissions right now") {
+  retryAfterSeconds?: number;
+
+  constructor(message = "Too many workflow submissions right now", retryAfterSeconds?: number) {
     super(message);
     this.name = "RateLimitExceededError";
+    if (retryAfterSeconds) {
+      this.retryAfterSeconds = retryAfterSeconds;
+    }
   }
 }
 

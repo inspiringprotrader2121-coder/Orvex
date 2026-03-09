@@ -2,12 +2,25 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/auth";
 import { getRequiredServerEnv } from "@/lib/server-env";
+import { RateLimitExceededError } from "@server/utils/errors";
+import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
+import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 
 function getStripeClient() {
     return new Stripe(getRequiredServerEnv("STRIPE_SECRET_KEY"));
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  try {
+    assertSameOrigin(request);
+  } catch (error) {
+    if (error instanceof InvalidOriginError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    console.error("Origin validation failed:", error);
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  }
+
     const session = await auth();
     const userId = session?.user?.id;
 
@@ -16,7 +29,9 @@ export async function POST() {
     }
 
     try {
-        const stripe = getStripeClient();
+    await WorkflowAbuseService.assertCheckoutCreation(request, userId);
+
+    const stripe = getStripeClient();
         const checkoutSession = await stripe.checkout.sessions.create({
             payment_method_types: ["card"],
             metadata: {
@@ -42,9 +57,21 @@ export async function POST() {
             client_reference_id: userId,
         });
 
-        return NextResponse.json({ url: checkoutSession.url });
-    } catch (error) {
-        console.error("Stripe Checkout Error:", error);
-        return NextResponse.json({ error: "Unable to start checkout" }, { status: 500 });
+    return NextResponse.json({ url: checkoutSession.url });
+  } catch (error) {
+    console.error("Stripe Checkout Error:", error);
+
+    if (error instanceof RateLimitExceededError) {
+      const rateLimitHeaders = error.retryAfterSeconds
+        ? { "Retry-After": `${error.retryAfterSeconds}` }
+        : undefined;
+
+      return NextResponse.json({ error: error.message }, {
+        status: 429,
+        headers: rateLimitHeaders,
+      });
     }
+
+    return NextResponse.json({ error: "Unable to start checkout" }, { status: 500 });
+  }
 }

@@ -26,6 +26,7 @@ import {
   getWorkflowLabel,
   isCompetitorAnalysisResult,
   isLaunchPack,
+  isListingGeneratorResult,
   isListingIntelligenceResult,
   isOpportunityAnalysisResult,
   isWorkflowFailureResult,
@@ -118,6 +119,7 @@ export default function WorkflowResultsPage() {
   const listing = isListingIntelligenceResult(displayData) ? displayData as ScorecardArtifact : null;
   const competitor = isCompetitorAnalysisResult(displayData) ? displayData : null;
   const opportunity = isOpportunityAnalysisResult(displayData) ? displayData : null;
+  const generatedListing = isListingGeneratorResult(displayData) ? displayData : null;
   const launchPack = isLaunchPack(displayData) ? getLaunchPackData(displayData) : null;
   const isProcessing = workflow ? ["pending", "processing", "queued"].includes(workflow.status) : false;
   const workflowTitle = workflow ? getWorkflowTitle(workflow.inputData, workflow.artifact) : "Workflow";
@@ -266,6 +268,27 @@ export default function WorkflowResultsPage() {
                 <BulletList items={listing.weaknesses} />
               </ResultSection>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && generatedListing ? (
+        <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-8">
+            <ResultSection title="SEO Title" icon={<Sparkles className="h-4 w-4" />}>
+              <CopyBlock text={generatedListing.title} />
+            </ResultSection>
+            <ResultSection title="Description" icon={<Search className="h-4 w-4" />}>
+              <CopyBlock text={generatedListing.description} multiline />
+            </ResultSection>
+          </div>
+          <div className="space-y-8">
+            <ResultSection title="Tags" icon={<Tag className="h-4 w-4" />}>
+              <TagList items={generatedListing.tags} />
+            </ResultSection>
+            <ResultSection title="FAQ" icon={<Radar className="h-4 w-4" />}>
+              <BulletList items={generatedListing.faq} />
+            </ResultSection>
           </div>
         </div>
       ) : null}
