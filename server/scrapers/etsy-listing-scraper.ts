@@ -48,6 +48,32 @@ function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function parseRating(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(5, value));
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(5, parsed)) : null;
+  }
+
+  return null;
+}
+
+function parseReviewCount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value.replace(/[^0-9]/g, ""), 10);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  }
+
+  return 0;
+}
+
 function extractTagsFromHtml(html: string) {
   const tagMatches = Array.from(html.matchAll(/"tags"\s*:\s*\[(.*?)\]/g));
   const tags: string[] = [];
@@ -66,7 +92,8 @@ export class EtsyListingScraper implements ListingScraper {
   provider = "etsy" as const;
 
   canHandle(url: URL) {
-    return url.hostname.includes("etsy.com");
+    const hostname = url.hostname.toLowerCase();
+    return hostname === "etsy.com" || hostname.endsWith(".etsy.com");
   }
 
   async scrape(url: string) {
@@ -76,6 +103,8 @@ export class EtsyListingScraper implements ListingScraper {
         "accept-language": "en-US,en;q=0.9",
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       },
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!response.ok) {
@@ -87,6 +116,9 @@ export class EtsyListingScraper implements ListingScraper {
     const payloads = flattenJsonPayloads(parseJsonBlocks(html));
     const productPayload = payloads.find((payload) => payload["@type"] === "Product") ?? {};
     const offerPayload = payloads.find((payload) => payload["@type"] === "Offer") ?? {};
+    const aggregateRating = typeof productPayload.aggregateRating === "object" && productPayload.aggregateRating
+      ? productPayload.aggregateRating as Record<string, unknown>
+      : {};
 
     const title =
       (typeof productPayload.name === "string" ? productPayload.name : undefined) ||
@@ -110,11 +142,13 @@ export class EtsyListingScraper implements ListingScraper {
     ]);
 
     const snapshot = ScrapedListingSnapshotSchema.parse({
+      averageRating: parseRating(aggregateRating.ratingValue),
       currency: typeof offerPayload.priceCurrency === "string" ? offerPayload.priceCurrency : undefined,
       description,
       images,
       priceText: $('[data-buy-box-region="price"]').text().trim() || undefined,
       provider: this.provider,
+      reviewCount: parseReviewCount(aggregateRating.ratingCount),
       sellerName: $('[data-selector="shop-owner"]').text().trim() || undefined,
       tags,
       title,

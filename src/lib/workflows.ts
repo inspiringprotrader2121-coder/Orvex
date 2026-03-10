@@ -3,8 +3,11 @@ import type { CompetitorAnalysisSchema } from "@server/schemas/competitor-analys
 import type { LaunchPackSchema } from "@server/schemas/launch-pack";
 import type { ListingGeneratorResultSchema } from "@server/schemas/listing-generator";
 import type { ListingIntelligenceReportSchema } from "@server/schemas/listing-intelligence";
+import type { MockupGenerationWorkflowResultSchema } from "@server/schemas/mockup-generation";
+import type { MultiChannelLaunchPackSchema } from "@server/schemas/multi-channel-launch-pack";
 import type { OpportunityAnalysisAiSchema } from "@server/schemas/opportunity";
 import type { WorkflowStatusSchema, WorkflowTypeSchema } from "@server/schemas/common";
+import type { SeoKeywordResultSchema } from "@server/schemas/seo-keywords";
 
 export type WorkflowStatus = z.infer<typeof WorkflowStatusSchema>;
 export type WorkflowType = z.infer<typeof WorkflowTypeSchema>;
@@ -13,9 +16,16 @@ export type ListingIntelligenceResult = z.infer<typeof ListingIntelligenceReport
 export type CompetitorAnalysisResult = z.infer<typeof CompetitorAnalysisSchema>;
 export type LaunchPackResult = z.infer<typeof LaunchPackSchema>;
 export type ListingGeneratorResult = z.infer<typeof ListingGeneratorResultSchema>;
+export type MockupGenerationResult = z.infer<typeof MockupGenerationWorkflowResultSchema>;
+export type MultiChannelLaunchPackResult = z.infer<typeof MultiChannelLaunchPackSchema> & {
+  productName: string;
+  productType: string;
+  targetAudience: string;
+};
 export type OpportunityAnalysisResult = z.infer<typeof OpportunityAnalysisAiSchema> & {
   opportunityScore: number;
 };
+export type SeoKeywordResult = z.infer<typeof SeoKeywordResultSchema>;
 
 export interface WorkflowFailureResult {
   error: string;
@@ -26,7 +36,10 @@ export type WorkflowResultData =
   | LaunchPackResult
   | ListingGeneratorResult
   | ListingIntelligenceResult
+  | MockupGenerationResult
+  | MultiChannelLaunchPackResult
   | OpportunityAnalysisResult
+  | SeoKeywordResult
   | WorkflowFailureResult
   | null;
 
@@ -43,6 +56,9 @@ const workflowLabels: Record<WorkflowType, string> = {
   launch_pack_generation: "Launch Pack",
   listing_forge: "Listing Generator",
   listing_intelligence: "Listing Intelligence",
+  mockup_generation: "Mockup Generator",
+  multi_channel_launch_pack: "Multi-Channel Launch Pack",
+  seo_keyword_analysis: "SEO Keyword Analysis",
   opportunity_analysis: "Opportunity Engine",
 };
 
@@ -62,6 +78,9 @@ export function getProductName(value: unknown): string {
     }
     if (typeof record.keyword === "string") {
       return record.keyword;
+    }
+    if (typeof record.inputLabel === "string") {
+      return record.inputLabel;
     }
     if (typeof record.ideaName === "string") {
       return record.ideaName;
@@ -90,6 +109,26 @@ export function isLaunchPack(value: unknown): value is LaunchPackResult {
       "optimizedDescription" in value &&
       "tikTokHooks" in value &&
       Array.isArray((value as Record<string, unknown>).tikTokHooks),
+  );
+}
+
+export function isMultiChannelLaunchPack(value: unknown): value is MultiChannelLaunchPackResult {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "channels" in value &&
+      "productName" in value &&
+      typeof (value as Record<string, unknown>).channels === "object",
+  );
+}
+
+export function isMockupGenerationResult(value: unknown): value is MockupGenerationResult {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "images" in value &&
+      Array.isArray((value as Record<string, unknown>).images) &&
+      "heroPrompt" in value,
   );
 }
 
@@ -130,5 +169,14 @@ export function isListingGeneratorResult(value: unknown): value is ListingGenera
       "description" in value &&
       "tags" in value &&
       Array.isArray((value as Record<string, unknown>).tags),
+  );
+}
+
+export function isSeoKeywordResult(value: unknown): value is SeoKeywordResult {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "keywords" in value &&
+      Array.isArray((value as Record<string, unknown>).keywords),
   );
 }

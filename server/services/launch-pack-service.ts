@@ -2,6 +2,9 @@ import { db } from "@/lib/db";
 import { launchPacks } from "@/lib/db/schema";
 import { StructuredAiClient } from "@server/ai/client";
 import { LaunchPackSchema, type LaunchPack } from "@server/schemas/launch-pack";
+import { env } from "@server/utils/env";
+import { AiCacheService } from "./ai-cache-service";
+import { ModerationIngestService } from "./admin/moderation-ingest-service";
 
 export class LaunchPackService {
   static async process(input: {
@@ -13,10 +16,25 @@ export class LaunchPackService {
     userId: string;
     workflowId: string;
   }): Promise<LaunchPack> {
-    const result = await StructuredAiClient.generate({
+    const { data: result } = await StructuredAiClient.generateWithCache({
+      cache: {
+        key: AiCacheService.buildKey("launch-pack:v1", {
+          audience: input.audience ?? null,
+          category: input.category ?? null,
+          description: input.description,
+          keyword: input.keyword ?? null,
+          productName: input.productName,
+        }),
+        ttlSeconds: env.aiWorkflowCacheTtlSeconds,
+      },
       maxCompletionTokens: 2_000,
       schema: LaunchPackSchema,
       system: "You are Orvex, an AI growth operating system for digital product sellers. Create launch assets that are commercially sharp, channel-specific, and ready to publish. Return structured JSON only.",
+      tracking: {
+        feature: "launch_pack_generation",
+        userId: input.userId,
+        workflowId: input.workflowId,
+      },
       user: `
 Create a full one-click launch pack for this product.
 
@@ -68,6 +86,15 @@ Return:
         updatedAt: new Date(),
         userId: input.userId,
       },
+    });
+
+    await ModerationIngestService.upsert({
+      payload: result as Record<string, unknown>,
+      summary: `Generated launch pack for ${input.productName}.`,
+      title: input.productName,
+      type: "ai_template",
+      userId: input.userId,
+      workflowId: input.workflowId,
     });
 
     return result;

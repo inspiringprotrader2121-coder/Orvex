@@ -4,72 +4,87 @@ import { CompetitorAnalysisService } from "@server/services/competitor-analysis-
 import { LaunchPackService } from "@server/services/launch-pack-service";
 import { ListingGeneratorService } from "@server/services/listing-generator-service";
 import { ListingIntelligenceService } from "@server/services/listing-intelligence-service";
+import { MultiChannelLaunchPackService } from "@server/services/multi-channel-launch-pack-service";
+import { SeoKeywordService } from "@server/services/seo-keyword-service";
 import { OpportunityService } from "@server/services/opportunity-service";
 import { WorkflowService } from "@server/services/workflow-service";
 import { env } from "@server/utils/env";
+
+const workflowHandlers: {
+  [K in OrvexWorkflowJob["type"]]: (job: Extract<OrvexWorkflowJob, { type: K }>) => Promise<Record<string, unknown>>;
+} = {
+  competitor_analysis: async (job) => CompetitorAnalysisService.process({
+    keyword: job.payload.keyword,
+    maxCompetitors: job.payload.maxCompetitors,
+    productName: job.payload.productName,
+    url: job.payload.url,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }),
+  etsy_listing_launch_pack: async (job) => LaunchPackService.process({
+    audience: job.payload.audience,
+    category: job.payload.category,
+    description: job.payload.description,
+    keyword: job.payload.keyword,
+    productName: job.payload.productName,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  launch_pack_generation: async (job) => LaunchPackService.process({
+    audience: job.payload.audience,
+    category: job.payload.category,
+    description: job.payload.description,
+    keyword: job.payload.keyword,
+    productName: job.payload.productName,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  listing_forge: async (job) => ListingGeneratorService.process({
+    productName: job.payload.productName,
+    productType: job.payload.productType,
+    projectId: job.payload.projectId,
+    targetAudience: job.payload.targetAudience,
+    tone: job.payload.tone,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  listing_intelligence: async (job) => ListingIntelligenceService.process({
+    url: job.payload.url,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  multi_channel_launch_pack: async (job) => MultiChannelLaunchPackService.process({
+    productName: job.payload.productName,
+    productType: job.payload.productType,
+    targetAudience: job.payload.targetAudience,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  opportunity_analysis: async (job) => OpportunityService.process({
+    keyword: job.payload.keyword,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+  seo_keyword_analysis: async (job) => SeoKeywordService.process({
+    inputText: job.payload.inputText,
+    source: job.payload.source,
+    userId: job.userId,
+    workflowId: job.workflowId,
+  }) as Promise<Record<string, unknown>>,
+};
 
 export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
   await WorkflowService.markProcessing(job.data.workflowId);
 
   try {
-    switch (job.data.type) {
-      case "listing_intelligence": {
-        const result = await ListingIntelligenceService.process({
-          url: job.data.payload.url,
-          userId: job.data.userId,
-          workflowId: job.data.workflowId,
-        });
-        await WorkflowService.markCompleted(job.data.workflowId, result);
-        return result;
-      }
-      case "competitor_analysis": {
-        const result = await CompetitorAnalysisService.process({
-          url: job.data.payload.url,
-          userId: job.data.userId,
-          workflowId: job.data.workflowId,
-        });
-        await WorkflowService.markCompleted(job.data.workflowId, result);
-        return result;
-      }
-      case "opportunity_analysis": {
-        const result = await OpportunityService.process({
-          keyword: job.data.payload.keyword,
-          userId: job.data.userId,
-          workflowId: job.data.workflowId,
-        });
-        await WorkflowService.markCompleted(job.data.workflowId, result as Record<string, unknown>);
-        return result;
-      }
-      case "listing_forge": {
-        const result = await ListingGeneratorService.process({
-          productName: job.data.payload.productName,
-          productType: job.data.payload.productType,
-          projectId: job.data.payload.projectId,
-          targetAudience: job.data.payload.targetAudience,
-          tone: job.data.payload.tone,
-          userId: job.data.userId,
-          workflowId: job.data.workflowId,
-        });
-        await WorkflowService.markCompleted(job.data.workflowId, result as Record<string, unknown>);
-        return result;
-      }
-      case "launch_pack_generation":
-      case "etsy_listing_launch_pack": {
-        const result = await LaunchPackService.process({
-          audience: job.data.payload.audience,
-          category: job.data.payload.category,
-          description: job.data.payload.description,
-          keyword: job.data.payload.keyword,
-          productName: job.data.payload.productName,
-          userId: job.data.userId,
-          workflowId: job.data.workflowId,
-        });
-        await WorkflowService.markCompleted(job.data.workflowId, result as Record<string, unknown>);
-        return result;
-      }
-      default:
-        throw new Error(`Unsupported job type: ${JSON.stringify(job.data)}`);
+    const handler = workflowHandlers[job.data.type];
+    if (!handler) {
+      throw new Error(`Unsupported job type: ${JSON.stringify(job.data)}`);
     }
+
+    const result = await handler(job.data as never);
+    await WorkflowService.markCompleted(job.data.workflowId, result);
+    return result;
   } catch (error) {
     await WorkflowService.markFailed(job.data.workflowId, error);
     throw error;

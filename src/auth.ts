@@ -8,6 +8,9 @@ import {
   recordFailedLoginAttempt,
 } from "@/lib/auth-rate-limit";
 import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { users } from "@/lib/db/schema";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -26,11 +29,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           const email = String(credentials.email).trim().toLowerCase();
           const password = String(credentials.password);
           await assertLoginAttemptAllowed(request, email);
-          const [{ db }, { users }, { eq }] = await Promise.all([
-            import("@/lib/db"),
-            import("@/lib/db/schema"),
-            import("drizzle-orm"),
-          ]);
 
           const user = await db.query.users.findFirst({
             where: eq(users.email, email),
@@ -48,11 +46,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return null;
           }
 
+          if (user.status !== "active") {
+            return null;
+          }
+
           await clearFailedLoginAttempts(request, email);
+          await db.update(users).set({
+            lastLoginAt: new Date(),
+            updatedAt: new Date(),
+          }).where(eq(users.id, user.id));
 
           return {
             id: user.id,
             email: user.email,
+            role: user.role,
+            status: user.status,
+            subscriptionTier: user.subscriptionTier,
           };
         } catch (error) {
           if (error instanceof AuthRateLimitError) {
@@ -68,13 +77,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        const appUser = user as typeof user & {
+          role?: "super_admin" | "admin" | "moderator" | "user";
+          status?: "active" | "suspended" | "deleted";
+          subscriptionTier?: "free" | "starter" | "pro" | "growth" | "enterprise";
+        };
         token.id = user.id;
+        token.role = appUser.role;
+        token.status = appUser.status;
+        token.subscriptionTier = appUser.subscriptionTier;
       }
       return token;
     },
     async session({ session, token }) {
       if (token.id) {
         session.user.id = token.id;
+        session.user.role = token.role ?? "user";
+        session.user.status = token.status ?? "active";
+        session.user.subscriptionTier = token.subscriptionTier ?? "free";
       }
       return session;
     },

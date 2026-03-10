@@ -8,6 +8,9 @@ export const WorkflowTypeSchema = z.enum([
   "opportunity_analysis",
   "listing_forge",
   "launch_pack_generation",
+  "multi_channel_launch_pack",
+  "mockup_generation",
+  "seo_keyword_analysis",
   "bulk_launch_generation",
   "etsy_listing_launch_pack",
 ]);

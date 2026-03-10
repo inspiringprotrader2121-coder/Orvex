@@ -18,7 +18,11 @@ import {
   Swords,
   Tag,
   Zap,
+  ImageIcon,
 } from "lucide-react";
+import { MultiChannelLaunchTabs } from "@/components/dashboard/multi-channel-launch-tabs";
+import { MockupGallery } from "@/components/launch/mockup-gallery";
+import { CompetitorComparisonChart } from "@/components/optimize/competitor-comparison-chart";
 import { useSocket } from "@/components/providers/socket-provider";
 import { getErrorMessage } from "@/lib/errors";
 import {
@@ -28,7 +32,10 @@ import {
   isLaunchPack,
   isListingGeneratorResult,
   isListingIntelligenceResult,
+  isMockupGenerationResult,
+  isMultiChannelLaunchPack,
   isOpportunityAnalysisResult,
+  isSeoKeywordResult,
   isWorkflowFailureResult,
   type WorkflowStatus,
 } from "@/lib/workflows";
@@ -61,6 +68,65 @@ type ScorecardArtifact = {
   suggestedTags: string[];
 };
 
+type NormalizedCompetitorAnalysis = {
+  comparisonSet: Array<{
+    averageRating: number | null;
+    estimatedRank: number;
+    keywordOverlap: number;
+    priceAmount: number | null;
+    priceText?: string;
+    reviewCount: number;
+    shopName?: string;
+    title: string;
+    url: string;
+  }>;
+  differentiationStrategy: string;
+  inputLabel: string;
+  keywordOpportunities: string[];
+  keywords: Array<{
+    competitionScore: number;
+    keyword: string;
+    opportunityScore: number;
+    rankingScore: number;
+    trendScore: number;
+  }>;
+  pricing: {
+    marketAverage: number;
+    marketHigh: number;
+    marketLow: number;
+    pricePositioning: string;
+    pricePressureScore: number;
+    recommendation: string;
+    targetPrice: number | null;
+  };
+  ranking: {
+    estimatedRank: number;
+    rankingMomentumScore: number;
+    recommendation: string;
+    visibilityScore: number;
+  };
+  reviews: {
+    marketAverageReviewCount: number;
+    recommendation: string;
+    targetReviewCount: number;
+    trustSignalScore: number;
+  };
+  strengths: string[];
+  summary: string;
+  targetListing: {
+    averageRating: number | null;
+    estimatedRank: number;
+    keywordOverlap: number;
+    priceAmount: number | null;
+    priceText?: string;
+    reviewCount: number;
+    shopName?: string;
+    title: string;
+    url: string;
+  } | null;
+  weaknesses: string[];
+};
+
 export default function WorkflowResultsPage() {
   const params = useParams<{ id: string }>();
   const { socket } = useSocket();
@@ -69,6 +135,7 @@ export default function WorkflowResultsPage() {
   const [workflow, setWorkflow] = useState<WorkflowApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [seoApplyStatus, setSeoApplyStatus] = useState("");
 
   const fetchWorkflow = useEffectEvent(async () => {
     try {
@@ -117,10 +184,15 @@ export default function WorkflowResultsPage() {
   }, [workflow]);
 
   const listing = isListingIntelligenceResult(displayData) ? displayData as ScorecardArtifact : null;
-  const competitor = isCompetitorAnalysisResult(displayData) ? displayData : null;
+  const competitor = isCompetitorAnalysisResult(displayData)
+    ? normalizeCompetitorAnalysis(displayData as Record<string, unknown>)
+    : null;
   const opportunity = isOpportunityAnalysisResult(displayData) ? displayData : null;
   const generatedListing = isListingGeneratorResult(displayData) ? displayData : null;
   const launchPack = isLaunchPack(displayData) ? getLaunchPackData(displayData) : null;
+  const multiChannelLaunchPack = isMultiChannelLaunchPack(displayData) ? displayData : null;
+  const mockupGeneration = isMockupGenerationResult(displayData) ? displayData : null;
+  const seoSuggestion = isSeoKeywordResult(displayData) ? displayData : null;
   const isProcessing = workflow ? ["pending", "processing", "queued"].includes(workflow.status) : false;
   const workflowTitle = workflow ? getWorkflowTitle(workflow.inputData, workflow.artifact) : "Workflow";
 
@@ -153,6 +225,42 @@ export default function WorkflowResultsPage() {
   const failureMessage = isWorkflowFailureResult(workflow.resultData)
     ? workflow.resultData.error
     : workflow.errorMessage || "This workflow failed before ORVEX could persist a result.";
+
+  async function handleSeoApply() {
+    if (!seoSuggestion) {
+      return;
+    }
+
+    const listingId = window.prompt("Enter the listing ID to apply this suggestion to:");
+    if (!listingId) {
+      setSeoApplyStatus("No listing selected.");
+      return;
+    }
+
+    try {
+      setSeoApplyStatus("Applying…");
+      const response = await fetch("/api/seo-keywords/apply", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          listingId,
+          suggestionId: seoSuggestion.suggestionId ?? workflow?.id,
+          notes: "Applied from SEO panel",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to apply SEO suggestion");
+      }
+
+      setSeoApplyStatus("Applied successfully.");
+    } catch (applyError) {
+      setSeoApplyStatus("Auto-apply failed.");
+      console.error("SEO auto-apply error:", applyError);
+    }
+  }
 
   return (
     <div className="space-y-10 animate-in fade-in duration-700">
@@ -294,22 +402,58 @@ export default function WorkflowResultsPage() {
       ) : null}
 
       {!isProcessing && workflow.status !== "failed" && competitor ? (
-        <div className="grid gap-8 xl:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-8">
-            <ResultSection title="Differentiation Strategy" icon={<Swords className="h-4 w-4" />}>
-              <CopyBlock text={competitor.differentiationStrategy} multiline />
-            </ResultSection>
-            <ResultSection title="Keyword Opportunities" icon={<Tag className="h-4 w-4" />}>
-              <TagList items={competitor.keywordOpportunities} />
-            </ResultSection>
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            <MetricCard label="Price Pressure" value={competitor.pricing.pricePressureScore} accent="text-cyan-300" />
+            <MetricCard label="Trust Signal" value={competitor.reviews.trustSignalScore} accent="text-emerald-300" />
+            <MetricCard label="Visibility" value={competitor.ranking.visibilityScore} accent="text-amber-300" />
+            <MetricCard label="Momentum" value={competitor.ranking.rankingMomentumScore} accent="text-indigo-300" />
           </div>
-          <div className="space-y-8">
-            <ResultSection title="Competitor Strengths" icon={<Sparkles className="h-4 w-4" />}>
-              <BulletList items={competitor.strengths} />
-            </ResultSection>
-            <ResultSection title="Competitor Weaknesses" icon={<Radar className="h-4 w-4" />}>
-              <BulletList items={competitor.weaknesses} />
-            </ResultSection>
+
+          <div className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-8">
+              <ResultSection title="Market Summary" icon={<Swords className="h-4 w-4" />}>
+                <CopyBlock text={competitor.summary} multiline />
+              </ResultSection>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                <InsightPanel
+                  title={`Pricing • ${competitor.pricing.pricePositioning}`}
+                  body={competitor.pricing.recommendation}
+                />
+                <InsightPanel
+                  title={`Reviews • ${competitor.reviews.targetReviewCount}/${competitor.reviews.marketAverageReviewCount}`}
+                  body={competitor.reviews.recommendation}
+                />
+                <InsightPanel
+                  title={`Rank • #${competitor.ranking.estimatedRank}`}
+                  body={competitor.ranking.recommendation}
+                />
+              </div>
+
+              <CompetitorComparisonChart analysis={competitor} title={competitor.inputLabel || workflowTitle} />
+
+              <ResultSection title="Differentiation Strategy" icon={<Swords className="h-4 w-4" />}>
+                <CopyBlock text={competitor.differentiationStrategy} multiline />
+              </ResultSection>
+            </div>
+
+            <div className="space-y-8">
+              <ResultSection title="Keyword Opportunities" icon={<Tag className="h-4 w-4" />}>
+                <TagList items={competitor.keywordOpportunities} />
+              </ResultSection>
+
+              <ResultSection title="Keyword Metrics" icon={<Search className="h-4 w-4" />}>
+                <KeywordMetricsTable items={competitor.keywords} />
+              </ResultSection>
+
+              <ResultSection title="Competitor Strengths" icon={<Sparkles className="h-4 w-4" />}>
+                <BulletList items={competitor.strengths} />
+              </ResultSection>
+              <ResultSection title="Competitor Weaknesses" icon={<Radar className="h-4 w-4" />}>
+                <BulletList items={competitor.weaknesses} />
+              </ResultSection>
+            </div>
           </div>
         </div>
       ) : null}
@@ -432,15 +576,131 @@ export default function WorkflowResultsPage() {
         </div>
       ) : null}
 
-      {!isProcessing && workflow.status !== "failed" && !listing && !competitor && !opportunity && !launchPack ? (
-        <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
-          <h2 className="text-2xl font-black text-white">Raw workflow output</h2>
-          <p className="mt-3 text-sm text-gray-400">
-            This workflow completed, but the dashboard does not yet have a custom renderer for its artifact.
-          </p>
-          <pre className="mt-6 overflow-x-auto rounded-3xl bg-[#0A0A0B] p-5 text-xs text-gray-300">
-            {JSON.stringify(displayData, null, 2)}
-          </pre>
+      {!isProcessing && workflow.status !== "failed" && multiChannelLaunchPack ? (
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            <MetricCard label="Channels" value={Object.keys(multiChannelLaunchPack.channels).length} accent="text-indigo-300" />
+            <MetricCard label="Title Variants" value={Object.keys(multiChannelLaunchPack.channels).length} accent="text-sky-300" />
+            <MetricCard
+              label="Hashtags"
+              value={Object.values(multiChannelLaunchPack.channels).reduce((total, channel) => total + channel.hashtags.length, 0)}
+              accent="text-emerald-300"
+            />
+            <MetricCard label="Captions" value={Object.keys(multiChannelLaunchPack.channels).length} accent="text-amber-300" />
+          </div>
+
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+            <div className="mb-6">
+              <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-300">Multi-Channel Launch Pack</p>
+              <h2 className="mt-2 text-3xl font-black text-white">{multiChannelLaunchPack.productName}</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-400">
+                {multiChannelLaunchPack.productType} for {multiChannelLaunchPack.targetAudience}
+              </p>
+            </div>
+            <MultiChannelLaunchTabs artifact={multiChannelLaunchPack} />
+          </div>
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && mockupGeneration ? (
+        <div className="space-y-8">
+          <div className="grid gap-4 md:grid-cols-4">
+            <MetricCard label="Mockups" value={mockupGeneration.images.length} accent="text-rose-300" />
+            <MetricCard label="Channels" value={new Set(mockupGeneration.images.map((image) => image.channel)).size} accent="text-indigo-300" />
+            <MetricCard label="Color Direction" value={mockupGeneration.color} accent="text-amber-300" />
+            <MetricCard label="Style" value={mockupGeneration.style} accent="text-cyan-300" />
+          </div>
+
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-8">
+            <div className="mb-6 flex items-start gap-3">
+              <div className="rounded-2xl bg-indigo-500/10 p-3 text-indigo-300">
+                <ImageIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-300">Mockup Generator</p>
+                <h2 className="mt-2 text-3xl font-black text-white">{mockupGeneration.productName}</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-400">{mockupGeneration.summary}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <CopyBlock text={mockupGeneration.heroPrompt} multiline />
+              <div className="rounded-3xl border border-white/5 bg-[#0A0A0B] p-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">Creative brief</p>
+                <p className="mt-3 text-sm font-semibold text-white">Color</p>
+                <p className="mt-1 text-sm text-gray-400">{mockupGeneration.color}</p>
+                <p className="mt-4 text-sm font-semibold text-white">Style</p>
+                <p className="mt-1 text-sm text-gray-400">{mockupGeneration.style}</p>
+                <p className="mt-4 text-sm font-semibold text-white">Description</p>
+                <p className="mt-1 text-sm leading-relaxed text-gray-400">{mockupGeneration.description}</p>
+              </div>
+            </div>
+          </div>
+
+          <MockupGallery images={mockupGeneration.images} title={mockupGeneration.productName} />
+        </div>
+      ) : null}
+
+      {!isProcessing && workflow.status !== "failed" && seoSuggestion ? (
+        <div className="space-y-6">
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-gray-400">SEO Keyword Analysis</p>
+                <h2 className="text-3xl font-black text-white">{seoSuggestion.optimizedTitle}</h2>
+                <p className="mt-2 text-sm text-gray-300">{seoSuggestion.optimizedMetaDescription}</p>
+              </div>
+              <div className="space-y-1 text-right">
+                <div className="text-xs uppercase tracking-[0.2em] text-gray-500">Cache</div>
+                <div className="text-sm text-emerald-300">{seoSuggestion.cacheHit ? "Hit" : "Miss"}</div>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <CopyBlock text={seoSuggestion.optimizedDescription} multiline />
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  {seoSuggestion.tags.map((tag) => (
+                    <span key={tag} className="rounded-full border border-white/10 bg-[#0A0A0B] px-3 py-1 text-[11px] font-semibold text-gray-300">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <button type="button" onClick={handleSeoApply} className="w-full rounded-2xl border border-cyan-400/40 bg-cyan-500/10 px-4 py-3 text-sm font-bold uppercase tracking-[0.2em] text-cyan-300">
+                  Auto-apply to listing
+                </button>
+                {seoApplyStatus ? <p className="text-xs text-slate-400">{seoApplyStatus}</p> : null}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-[2rem] border border-white/5 bg-[#141417] p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-gray-500">Keywords</p>
+              <CopyButton
+                label="Copy title"
+                text={seoSuggestion.optimizedTitle}
+              />
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-3xl border border-white/5 bg-[#0A0A0B]">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                    <tr>
+                      <th className="px-4 py-3">Keyword</th>
+                      <th className="px-4 py-3">Trend</th>
+                      <th className="px-4 py-3">Competition</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {seoSuggestion.keywords.map((keyword) => (
+                    <tr key={keyword.keyword}>
+                      <td className="px-4 py-3 text-white">{keyword.keyword}</td>
+                      <td className="px-4 py-3 text-gray-300">{keyword.trendScore}</td>
+                      <td className="px-4 py-3 text-gray-300">{keyword.competitionScore}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
@@ -474,8 +734,14 @@ function getLaunchPackData(value: unknown) {
 function getWorkflowTitle(inputData: unknown, artifact: unknown) {
   if (artifact && typeof artifact === "object") {
     const record = artifact as Record<string, unknown>;
+    if (typeof record.productName === "string" && record.productName.trim()) {
+      return record.productName;
+    }
     if (typeof record.listingTitle === "string" && record.listingTitle.trim()) {
       return record.listingTitle;
+    }
+    if (typeof record.inputLabel === "string" && record.inputLabel.trim()) {
+      return record.inputLabel;
     }
     if (typeof record.keyword === "string" && record.keyword.trim()) {
       return record.keyword;
@@ -513,7 +779,7 @@ function PipelineItem({ description, title }: { description: string; title: stri
   );
 }
 
-function MetricCard({ accent, label, value }: { accent: string; label: string; value: number }) {
+function MetricCard({ accent, label, value }: { accent: string; label: string; value: number | string }) {
   return (
     <div className="rounded-3xl border border-white/5 bg-[#141417] p-5">
       <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-gray-500">{label}</p>
@@ -563,6 +829,137 @@ function TagList({ items }: { items: string[] }) {
           {item}
         </span>
       ))}
+    </div>
+  );
+}
+
+function normalizeCompetitorAnalysis(value: Record<string, unknown>): NormalizedCompetitorAnalysis {
+  const comparisonSet = Array.isArray(value.comparisonSet) ? value.comparisonSet as Array<Record<string, unknown>> : [];
+  const targetListing = value.targetListing && typeof value.targetListing === "object"
+    ? value.targetListing as Record<string, unknown>
+    : null;
+
+  return {
+    comparisonSet: comparisonSet.map((item, index) => ({
+      averageRating: typeof item.averageRating === "number" ? item.averageRating : null,
+      estimatedRank: typeof item.estimatedRank === "number" ? item.estimatedRank : index + 1,
+      keywordOverlap: typeof item.keywordOverlap === "number" ? item.keywordOverlap : 0,
+      priceAmount: typeof item.priceAmount === "number" ? item.priceAmount : null,
+      priceText: typeof item.priceText === "string" ? item.priceText : undefined,
+      reviewCount: typeof item.reviewCount === "number" ? item.reviewCount : 0,
+      shopName: typeof item.shopName === "string" ? item.shopName : undefined,
+      title: typeof item.title === "string" ? item.title : "Marketplace listing",
+      url: typeof item.url === "string" ? item.url : "#",
+    })),
+    differentiationStrategy: typeof value.differentiationStrategy === "string"
+      ? value.differentiationStrategy
+      : "No differentiation strategy was captured in this legacy competitor report.",
+    inputLabel: typeof value.inputLabel === "string" ? value.inputLabel : "",
+    keywordOpportunities: Array.isArray(value.keywordOpportunities)
+      ? value.keywordOpportunities.filter((item): item is string => typeof item === "string")
+      : [],
+    keywords: Array.isArray(value.keywords)
+      ? value.keywords.map((item) => ({
+          competitionScore: typeof (item as Record<string, unknown>).competitionScore === "number" ? (item as Record<string, unknown>).competitionScore as number : 0,
+          keyword: typeof (item as Record<string, unknown>).keyword === "string" ? (item as Record<string, unknown>).keyword as string : "keyword",
+          opportunityScore: typeof (item as Record<string, unknown>).opportunityScore === "number" ? (item as Record<string, unknown>).opportunityScore as number : 0,
+          rankingScore: typeof (item as Record<string, unknown>).rankingScore === "number" ? (item as Record<string, unknown>).rankingScore as number : 0,
+          trendScore: typeof (item as Record<string, unknown>).trendScore === "number" ? (item as Record<string, unknown>).trendScore as number : 0,
+        }))
+      : [],
+    pricing: {
+      marketAverage: 0,
+      marketHigh: 0,
+      marketLow: 0,
+      pricePositioning: "unknown",
+      pricePressureScore: 0,
+      recommendation: "No pricing recommendation captured in this legacy report.",
+      targetPrice: null,
+      ...(value.pricing && typeof value.pricing === "object" ? value.pricing as Record<string, unknown> : {}),
+    },
+    ranking: {
+      estimatedRank: 1,
+      rankingMomentumScore: 0,
+      recommendation: "No ranking recommendation captured in this legacy report.",
+      visibilityScore: 0,
+      ...(value.ranking && typeof value.ranking === "object" ? value.ranking as Record<string, unknown> : {}),
+    },
+    reviews: {
+      marketAverageReviewCount: 0,
+      recommendation: "No review recommendation captured in this legacy report.",
+      targetReviewCount: 0,
+      trustSignalScore: 0,
+      ...(value.reviews && typeof value.reviews === "object" ? value.reviews as Record<string, unknown> : {}),
+    },
+    strengths: Array.isArray(value.strengths)
+      ? value.strengths.filter((item): item is string => typeof item === "string")
+      : [],
+    summary: typeof value.summary === "string"
+      ? value.summary
+      : "This competitor report was generated before ORVEX stored marketplace summary metrics.",
+    targetListing: targetListing
+      ? {
+          averageRating: typeof targetListing.averageRating === "number" ? targetListing.averageRating : null,
+          estimatedRank: typeof targetListing.estimatedRank === "number" ? targetListing.estimatedRank : 1,
+          keywordOverlap: typeof targetListing.keywordOverlap === "number" ? targetListing.keywordOverlap : 100,
+          priceAmount: typeof targetListing.priceAmount === "number" ? targetListing.priceAmount : null,
+          priceText: typeof targetListing.priceText === "string" ? targetListing.priceText : undefined,
+          reviewCount: typeof targetListing.reviewCount === "number" ? targetListing.reviewCount : 0,
+          shopName: typeof targetListing.shopName === "string" ? targetListing.shopName : undefined,
+          title: typeof targetListing.title === "string" ? targetListing.title : "Target listing",
+          url: typeof targetListing.url === "string" ? targetListing.url : "#",
+        }
+      : null,
+    weaknesses: Array.isArray(value.weaknesses)
+      ? value.weaknesses.filter((item): item is string => typeof item === "string")
+      : [],
+  };
+}
+
+function InsightPanel({ body, title }: { body: string; title: string }) {
+  return (
+    <div className="rounded-3xl border border-white/5 bg-[#141417] p-5">
+      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-gray-500">{title}</p>
+      <p className="mt-3 text-sm leading-relaxed text-gray-300">{body}</p>
+    </div>
+  );
+}
+
+function KeywordMetricsTable({
+  items,
+}: {
+  items: Array<{
+    competitionScore: number;
+    keyword: string;
+    opportunityScore: number;
+    rankingScore: number;
+    trendScore: number;
+  }>;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-3xl border border-white/5 bg-[#141417]">
+      <table className="w-full text-left text-sm">
+        <thead className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+          <tr>
+            <th className="px-4 py-3">Keyword</th>
+            <th className="px-4 py-3">Trend</th>
+            <th className="px-4 py-3">Competition</th>
+            <th className="px-4 py-3">Ranking</th>
+            <th className="px-4 py-3">Opportunity</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {items.map((item) => (
+            <tr key={item.keyword}>
+              <td className="px-4 py-3 text-white">{item.keyword}</td>
+              <td className="px-4 py-3 text-gray-300">{item.trendScore}</td>
+              <td className="px-4 py-3 text-gray-300">{item.competitionScore}</td>
+              <td className="px-4 py-3 text-gray-300">{item.rankingScore}</td>
+              <td className="px-4 py-3 font-semibold text-indigo-300">{item.opportunityScore}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

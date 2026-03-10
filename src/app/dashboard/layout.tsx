@@ -2,12 +2,19 @@ import { auth, signOut } from "@/auth";
 import {
   BarChart3,
   Command,
+  Compass,
+  Flame,
+  Search,
+  ImageIcon,
   LayoutDashboard,
   LogOut,
   Menu,
+  PenTool,
+  RadioTower,
   Rocket,
   Sparkles,
   Wallet,
+  Shield,
 } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -38,10 +45,19 @@ export default async function DashboardLayout({
 
         <nav className="mt-4 flex-1 space-y-2 px-4">
           <SidebarLink href="/dashboard" icon={<LayoutDashboard className="h-4 w-4" />} label="Overview" />
-          <SidebarLink href="/dashboard/analysis" icon={<BarChart3 className="h-4 w-4" />} label="Analysis" />
+          <SidebarLink href="/dashboard/discover" icon={<Compass className="h-4 w-4" />} label="Discover" />
+          <SidebarLink href="/dashboard/forge" icon={<PenTool className="h-4 w-4" />} label="Forge" />
+          <SidebarLink href="/dashboard/optimize" icon={<Search className="h-4 w-4" />} label="Optimize" />
+          <SidebarLink href="/dashboard/launch" icon={<Flame className="h-4 w-4" />} label="Launch" />
+          <SidebarLink href="/dashboard/launch/mockups" icon={<ImageIcon className="h-4 w-4" />} label="Mockups" />
+          <SidebarLink href="/dashboard/launch/multi" icon={<RadioTower className="h-4 w-4" />} label="Multi-Channel" />
+          <SidebarLink href="/dashboard/analysis" icon={<BarChart3 className="h-4 w-4" />} label="Library" />
           <SidebarLink href="/dashboard/projects" icon={<Command className="h-4 w-4" />} label="Projects" />
           <SidebarLink href="/dashboard/workflows" icon={<Rocket className="h-4 w-4" />} label="Workflows" />
           <SidebarLink href="/dashboard/credits" icon={<Wallet className="h-4 w-4" />} label="Billing" />
+          {session.user.role === "super_admin" ? (
+            <SidebarLink href="/admin" icon={<Shield className="h-4 w-4" />} label="Super Admin" />
+          ) : null}
         </nav>
 
         <div className="border-t border-[#1C1C1F] p-4">

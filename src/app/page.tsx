@@ -1,4 +1,4 @@
-import { BarChart3, CheckCircle2, Rocket, Zap } from "lucide-react";
+import { CheckCircle2, Compass, Flame, PenTool, Search, Zap } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -13,6 +13,12 @@ export default function Home() {
             </div>
             <span className="text-xl font-bold tracking-tight text-white">Orvex</span>
           </div>
+          <nav className="hidden items-center gap-5 text-sm font-medium text-zinc-400 lg:flex">
+            <Link href="/discover" className="transition-colors hover:text-white">Discover</Link>
+            <Link href="/forge" className="transition-colors hover:text-white">Forge</Link>
+            <Link href="/optimize" className="transition-colors hover:text-white">Optimize</Link>
+            <Link href="/launch" className="transition-colors hover:text-white">Launch</Link>
+          </nav>
           <div className="flex items-center gap-4">
             <Link href="/login" className="text-sm font-medium text-zinc-400 transition-colors hover:text-white">
               Log in
@@ -51,12 +57,12 @@ export default function Home() {
             >
               Start for Free <Zap className="h-5 w-5 text-purple-600" />
             </Link>
-            <a
-              href="#features"
+            <Link
+              href="/discover"
               className="rounded-full border border-white/10 px-8 py-4 text-lg font-medium transition-colors hover:bg-white/5"
             >
-              See how it works
-            </a>
+              Explore Modules
+            </Link>
           </div>
         </section>
 
@@ -66,21 +72,30 @@ export default function Home() {
             <p className="text-zinc-400">Stop doing manual keyword research. Let Orvex handle the heavy lifting.</p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             <FeatureCard
-              icon={<Rocket className="h-6 w-6 text-blue-400" />}
-              title="Instant Listings"
-              description="Generate highly converting titles, tags, and descriptions for Etsy, Shopify, and more in seconds."
+              href="/discover"
+              icon={<Compass className="h-6 w-6 text-emerald-400" />}
+              title="Discover Opportunities"
+              description="Analyze niche demand, competition, and trends to surface product ideas worth launching."
             />
             <FeatureCard
-              icon={<BarChart3 className="h-6 w-6 text-purple-400" />}
-              title="SEO Optimization"
-              description="Built-in keyword research ensures your products rank on the first page of search results."
+              href="/forge"
+              icon={<PenTool className="h-6 w-6 text-indigo-400" />}
+              title="Forge Listing Copy"
+              description="Generate Etsy-ready titles, descriptions, tags, and FAQs from a few core product inputs."
             />
             <FeatureCard
-              icon={<Zap className="h-6 w-6 text-amber-400" />}
-              title="Marketing Hooks"
-              description="Automatically generate viral TikTok, Reels, and YouTube Shorts scripts for your products."
+              href="/optimize"
+              icon={<Search className="h-6 w-6 text-sky-400" />}
+              title="Optimize Listings"
+              description="Score listings, detect keyword gaps, and benchmark competitor positioning with AI analysis."
+            />
+            <FeatureCard
+              href="/launch"
+              icon={<Flame className="h-6 w-6 text-amber-400" />}
+              title="Launch Campaigns"
+              description="Create multi-channel launch assets, including hooks, captions, emails, and rollout plans."
             />
           </div>
         </section>
@@ -128,14 +143,24 @@ export default function Home() {
   );
 }
 
-function FeatureCard({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+function FeatureCard({
+  description,
+  href,
+  icon,
+  title,
+}: {
+  description: string;
+  href: string;
+  icon: ReactNode;
+  title: string;
+}) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 transition-colors hover:bg-white/10">
+    <Link href={href} className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 transition-colors hover:bg-white/10">
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
         {icon}
       </div>
       <h3 className="text-xl font-semibold">{title}</h3>
       <p className="leading-relaxed text-zinc-400">{description}</p>
-    </div>
+    </Link>
   );
 }

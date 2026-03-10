@@ -4,6 +4,9 @@ import { auth } from "@/auth";
 import { getErrorMessage } from "@/lib/errors";
 import { WorkflowSubmissionService } from "@server/services/workflow-submission-service";
 import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
+import { FeatureAccessService, FeatureDisabledError } from "@server/services/feature-access-service";
+import { WorkflowSubmissionSchema } from "@server/schemas/workflow";
+import { getWorkflowFeatureKey } from "@server/workflows/workflow-registry";
 import {
   InsufficientCreditsError,
   RateLimitExceededError,
@@ -31,6 +34,10 @@ function toErrorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
+  if (error instanceof FeatureDisabledError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
   console.error("Workflow submission failed:", getErrorMessage(error, "Unknown workflow error"));
   return NextResponse.json({ error: "Unable to start workflow" }, { status: 500 });
 }
@@ -55,7 +62,11 @@ export async function POST(request: Request) {
 
   try {
     await WorkflowAbuseService.assertWorkflowSubmission(request, userId);
-    const submission = await request.json();
+    const submission = WorkflowSubmissionSchema.parse(await request.json());
+    await FeatureAccessService.assertEnabled(getWorkflowFeatureKey(submission.type), {
+      subscriptionTier: session.user.subscriptionTier,
+      userId,
+    });
     const result = await WorkflowSubmissionService.start(userId, submission);
 
     return NextResponse.json({

@@ -8,6 +8,9 @@ import {
 } from "@server/schemas/listing-intelligence";
 import { scrapeListingByUrl } from "@server/scrapers";
 import { calculateListingScore } from "@server/utils/scoring";
+import { env } from "@server/utils/env";
+import { AiCacheService } from "./ai-cache-service";
+import { ModerationIngestService } from "./admin/moderation-ingest-service";
 
 export class ListingIntelligenceService {
   static async process(input: {
@@ -17,10 +20,26 @@ export class ListingIntelligenceService {
   }): Promise<ListingIntelligenceReport> {
     const snapshot = await scrapeListingByUrl(input.url);
 
-    const aiResult = await StructuredAiClient.generate({
+    const { data: aiResult } = await StructuredAiClient.generateWithCache({
+      cache: {
+        key: AiCacheService.buildKey("listing-intelligence:v1", {
+          description: snapshot.description,
+          priceText: snapshot.priceText ?? null,
+          provider: snapshot.provider,
+          sellerName: snapshot.sellerName ?? null,
+          tags: snapshot.tags,
+          title: snapshot.title,
+        }),
+        ttlSeconds: env.aiWorkflowCacheTtlSeconds,
+      },
       maxCompletionTokens: 1_200,
       schema: ListingIntelligenceAiSchema,
       system: "You are Orvex, a senior ecommerce growth strategist. Review marketplace listings like a top-tier conversion and SEO consultant. Return structured JSON only.",
+      tracking: {
+        feature: "listing_intelligence",
+        userId: input.userId,
+        workflowId: input.workflowId,
+      },
       user: `
 Analyze the following Etsy listing.
 
@@ -105,6 +124,15 @@ Return:
         userId: input.userId,
         weaknesses: report.weaknesses,
       },
+    });
+
+    await ModerationIngestService.upsert({
+      payload: report as Record<string, unknown>,
+      summary: `Generated optimization scorecard for ${snapshot.title}.`,
+      title: snapshot.title,
+      type: "listing_export",
+      userId: input.userId,
+      workflowId: input.workflowId,
     });
 
     return report;

@@ -11,6 +11,6 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    token: signSocketToken(userId, "user"),
+    token: signSocketToken(userId, session.user.role ?? "user"),
   });
 }

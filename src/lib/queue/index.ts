@@ -2,7 +2,7 @@ export {
   defaultWorkflowJobOptions,
   enqueueWorkflowJob,
   getWorkflowQueueConnection,
-  workflowQueue,
+  getWorkflowQueue,
 } from "@server/queues/workflow-queue";
 export type {
   LaunchPackGenerationJob,

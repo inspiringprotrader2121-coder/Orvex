@@ -75,9 +75,9 @@ export default async function AnalysisPage() {
           emptyCtaLabel="Analyze a competitor"
           items={competitorItems.map((item) => ({
             href: `/dashboard/workflows/${item.workflowId}`,
-            kicker: `${item.keywordOpportunities.length} keyword gaps`,
-            summary: item.sourceUrl,
-            title: item.listingTitle,
+            kicker: `v${item.analysisVersion} • ${item.keywordOpportunities.length} keyword gaps`,
+            summary: item.sourceUrl || item.inputLabel,
+            title: item.inputLabel,
           }))}
         />
 

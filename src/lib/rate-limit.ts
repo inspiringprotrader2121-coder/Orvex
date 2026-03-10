@@ -16,6 +16,11 @@ const globalForRateLimit = global as typeof global & {
   authRateLimitRedis?: Redis | null;
 };
 
+function isRedisDisabledForBuild() {
+  return process.env.NEXT_PHASE === "phase-production-build"
+    || process.env.npm_lifecycle_event === "build";
+}
+
 function getMemoryStore() {
   if (!globalForRateLimit.authRateLimitMemory) {
     globalForRateLimit.authRateLimitMemory = new Map<string, MemoryBucket>();
@@ -26,6 +31,11 @@ function getMemoryStore() {
 
 function getRedisClient() {
   if (globalForRateLimit.authRateLimitRedis !== undefined) {
+    return globalForRateLimit.authRateLimitRedis;
+  }
+
+  if (isRedisDisabledForBuild()) {
+    globalForRateLimit.authRateLimitRedis = null;
     return globalForRateLimit.authRateLimitRedis;
   }
 

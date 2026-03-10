@@ -20,7 +20,11 @@ type StudioMode = "bulk" | "competitor" | "forge" | "launch" | "listing" | "oppo
 type WorkflowSubmission =
   | {
       payload: { url: string };
-      type: "competitor_analysis" | "listing_intelligence";
+      type: "listing_intelligence";
+    }
+  | {
+      payload: { keyword?: string; url?: string };
+      type: "competitor_analysis";
     }
   | {
       payload: { keyword: string };
@@ -110,6 +114,7 @@ export default function WorkflowStudioPage() {
 
   const [listingUrl, setListingUrl] = useState("");
   const [competitorUrl, setCompetitorUrl] = useState("");
+  const [competitorKeyword, setCompetitorKeyword] = useState("");
   const [opportunityKeyword, setOpportunityKeyword] = useState("");
   const [forgeForm, setForgeForm] = useState({
     productName: "",
@@ -285,8 +290,15 @@ export default function WorkflowStudioPage() {
             className="space-y-8"
             onSubmit={(event) => {
               event.preventDefault();
+              if (!competitorUrl.trim() && !competitorKeyword.trim()) {
+                setError("Enter a competitor URL or a product keyword.");
+                return;
+              }
               void submitWorkflow({
-                payload: { url: competitorUrl.trim() },
+                payload: {
+                  keyword: competitorKeyword.trim() || undefined,
+                  url: competitorUrl.trim() || undefined,
+                },
                 type: "competitor_analysis",
               }, "competitor");
             }}
@@ -294,14 +306,24 @@ export default function WorkflowStudioPage() {
             <SectionHeader
               eyebrow="Competitor Analyzer"
               title="Break down a competing product"
-              description="ORVEX will inspect the listing, identify strengths and weaknesses, spot keyword opportunities, and suggest a differentiation strategy worth shipping."
+              description="ORVEX can inspect a competitor listing or a product keyword, compare it against live Etsy marketplace results, and surface pricing, review, ranking, and keyword positioning."
             />
-            <InputField
-              label="Competitor URL"
-              placeholder="https://www.etsy.com/listing/..."
-              value={competitorUrl}
-              onChange={setCompetitorUrl}
-            />
+            <div className="grid gap-6 md:grid-cols-2">
+              <InputField
+                label="Competitor URL"
+                placeholder="https://www.etsy.com/listing/..."
+                required={false}
+                value={competitorUrl}
+                onChange={setCompetitorUrl}
+              />
+              <InputField
+                label="Product keyword"
+                placeholder='e.g. "gift for mum"'
+                required={false}
+                value={competitorKeyword}
+                onChange={setCompetitorKeyword}
+              />
+            </div>
             <SubmitButton pending={pendingMode === "competitor"} label="Queue Competitor Analysis" />
           </form>
         ) : null}

@@ -4,21 +4,38 @@ import { workflowBatches, workflows } from "@/lib/db/schema";
 import { notifyJobUpdate } from "@/lib/socket-internal";
 import { getErrorMessage } from "@/lib/errors";
 import { enqueueWorkflowJob, type OrvexWorkflowJob } from "@server/queues/workflow-queue";
+import { enqueueMockupJob, type MockupGenerationJob } from "@server/queues/mockup-queue";
 import { env } from "@server/utils/env";
 import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
+import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 import { CreditAccountService } from "./credit-service";
 
-type StartWorkflowInput = {
+type EnqueueableJob = OrvexWorkflowJob | MockupGenerationJob;
+
+type StartWorkflowInput<TJob extends EnqueueableJob> = {
   creditsCost: number;
   inputData: Record<string, unknown>;
-  job: Omit<OrvexWorkflowJob, "workflowId">;
+  job: Omit<TJob, "workflowId">;
+  enqueueJob?: (job: TJob) => Promise<unknown>;
   projectId?: string;
   skipRateLimit?: boolean;
   sourceProvider?: "amazon" | "etsy" | "gumroad" | "internal" | "shopify";
+  storeConnectionId?: string;
   sourceUrl?: string;
 };
 
 export class WorkflowService {
+  private static async enqueueQueuedJob(job: EnqueueableJob) {
+    const definition = getWorkflowDefinition(job.type);
+
+    if (definition.queueName === "mockups") {
+      await enqueueMockupJob(job as MockupGenerationJob);
+      return;
+    }
+
+    await enqueueWorkflowJob(job as OrvexWorkflowJob);
+  }
+
   static async assertSubmissionRateLimit(userId: string) {
     const since = new Date(Date.now() - env.submissionLookbackMinutes * 60_000);
 
@@ -32,7 +49,7 @@ export class WorkflowService {
     }
   }
 
-  static async startWorkflow(userId: string, input: StartWorkflowInput) {
+  static async startWorkflow<TJob extends EnqueueableJob>(userId: string, input: StartWorkflowInput<TJob>) {
     if (!input.skipRateLimit) {
       await this.assertSubmissionRateLimit(userId);
     }
@@ -60,6 +77,7 @@ export class WorkflowService {
         progress: 0,
         projectId: input.projectId ?? null,
         sourceProvider: input.sourceProvider ?? "internal",
+        storeConnectionId: input.storeConnectionId ?? null,
         sourceUrl: input.sourceUrl ?? null,
         status: "queued",
         type: input.job.type,
@@ -70,9 +88,13 @@ export class WorkflowService {
       const queuedJob = {
         ...input.job,
         workflowId,
-      } as OrvexWorkflowJob;
+      } as TJob;
 
-      await enqueueWorkflowJob(queuedJob);
+      if (input.enqueueJob) {
+        await input.enqueueJob(queuedJob);
+      } else {
+        await this.enqueueQueuedJob(queuedJob);
+      }
 
       notifyJobUpdate(userId, workflowId, "queued");
       return workflowId;

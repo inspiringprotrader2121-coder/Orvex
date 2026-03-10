@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { creditTransactions, credits, users } from "@/lib/db/schema";
+import { notifyCreditsUpdate } from "@/lib/socket-internal";
 import { InsufficientCreditsError } from "@server/utils/errors";
 
 type CreditMutationInput = {
@@ -43,7 +44,7 @@ export class CreditAccountService {
   static async deductCredits(input: CreditMutationInput) {
     await this.ensureAccount(input.userId);
 
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const [account] = await tx
         .select({
           creditsAvailable: credits.creditsAvailable,
@@ -56,13 +57,14 @@ export class CreditAccountService {
         throw new InsufficientCreditsError();
       }
 
-      await tx.update(credits)
+      const [updated] = await tx.update(credits)
         .set({
           creditsAvailable: sql`${credits.creditsAvailable} - ${input.amount}`,
           creditsUsed: sql`${credits.creditsUsed} + ${input.amount}`,
           updatedAt: new Date(),
         })
-        .where(eq(credits.userId, input.userId));
+        .where(eq(credits.userId, input.userId))
+        .returning({ creditsAvailable: credits.creditsAvailable });
 
       await tx.update(users)
         .set({
@@ -78,14 +80,19 @@ export class CreditAccountService {
         userId: input.userId,
         workflowId: input.workflowId ?? null,
       });
+
+      return updated;
     });
+
+    notifyCreditsUpdate(input.userId, result?.creditsAvailable ?? 0);
+    return result;
   }
 
   static async addCredits(input: CreditMutationInput) {
     await this.ensureAccount(input.userId);
 
-    return db.transaction(async (tx) => {
-      await tx.update(credits)
+    const result = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(credits)
         .set({
           creditsAvailable: sql`${credits.creditsAvailable} + ${input.amount}`,
           ...(input.revertUsage
@@ -93,7 +100,8 @@ export class CreditAccountService {
             : {}),
           updatedAt: new Date(),
         })
-        .where(eq(credits.userId, input.userId));
+        .where(eq(credits.userId, input.userId))
+        .returning({ creditsAvailable: credits.creditsAvailable });
 
       await tx.update(users)
         .set({
@@ -109,7 +117,12 @@ export class CreditAccountService {
         userId: input.userId,
         workflowId: input.workflowId ?? null,
       });
+
+      return updated;
     });
+
+    notifyCreditsUpdate(input.userId, result?.creditsAvailable ?? 0);
+    return result;
   }
 
   static async syncMirrorFromUsers() {

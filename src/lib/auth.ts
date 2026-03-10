@@ -8,9 +8,11 @@ function getJwtSecret() {
 }
 
 export type SocketTokenRole = "internal" | "user";
+export type AdminSocketRole = "super_admin" | "admin" | "moderator";
+export type AppSocketRole = SocketTokenRole | AdminSocketRole;
 
 export interface SocketTokenPayload extends JwtPayload {
-  role: SocketTokenRole;
+  role: AppSocketRole;
   sub: string;
 }
 
@@ -35,14 +37,21 @@ export function verifyToken<T extends JwtPayload = JwtPayload>(token: string): T
   }
 }
 
-export function signSocketToken(subject: string, role: SocketTokenRole, expiresIn: SignOptions["expiresIn"] = "5m"): string {
+export function signSocketToken(subject: string, role: AppSocketRole, expiresIn: SignOptions["expiresIn"] = "5m"): string {
   return signToken({ sub: subject, role }, expiresIn);
 }
 
 export function verifySocketToken(token: string): SocketTokenPayload | null {
   const payload = verifyToken<SocketTokenPayload>(token);
 
-  if (!payload?.sub || (payload.role !== "user" && payload.role !== "internal")) {
+  if (
+    !payload?.sub ||
+    (payload.role !== "user" &&
+      payload.role !== "internal" &&
+      payload.role !== "moderator" &&
+      payload.role !== "admin" &&
+      payload.role !== "super_admin")
+  ) {
     return null;
   }
 

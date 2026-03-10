@@ -2,10 +2,22 @@ import { NextResponse } from 'next/server';
 import { db } from "@/lib/db";
 import { credits, users } from "@/lib/db/schema";
 import { consumeRegisterAttempt } from "@/lib/auth-rate-limit";
+import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 export async function POST(request: Request) {
+  try {
+    assertSameOrigin(request);
+  } catch (error) {
+    if (error instanceof InvalidOriginError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+
+    console.error("Registration origin validation failed:", error);
+    return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+  }
+
   try {
     const { email, password } = await request.json();
     const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -36,7 +48,10 @@ export async function POST(request: Request) {
     });
 
     if (existingUser) {
-      return NextResponse.json({ error: 'User already exists' }, { status: 409 });
+      return NextResponse.json({
+        success: true,
+        message: "If this email can sign in, you can continue to login."
+      });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -61,7 +76,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Account created successfully. You can now log in.'
+      message: "If this email can sign in, you can continue to login."
     });
 
   } catch (error) {

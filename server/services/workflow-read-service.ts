@@ -5,7 +5,10 @@ import {
   launchPacks,
   listings,
   listingAnalyses,
+  mockupGenerations,
+  multiChannelLaunchPacks,
   opportunities,
+  seoKeywordSuggestions,
   workflows,
 } from "@/lib/db/schema";
 
@@ -48,6 +51,24 @@ export class WorkflowReadService {
       case "etsy_listing_launch_pack": {
         const artifact = await db.query.launchPacks.findFirst({
           where: eq(launchPacks.workflowId, workflow.id),
+        });
+        return { artifact, workflow };
+      }
+      case "multi_channel_launch_pack": {
+        const artifact = await db.query.multiChannelLaunchPacks.findFirst({
+          where: eq(multiChannelLaunchPacks.workflowId, workflow.id),
+        });
+        return { artifact, workflow };
+      }
+      case "mockup_generation": {
+        const artifact = await db.query.mockupGenerations.findFirst({
+          where: eq(mockupGenerations.workflowId, workflow.id),
+        });
+        return { artifact, workflow };
+      }
+      case "seo_keyword_analysis": {
+        const artifact = await db.query.seoKeywordSuggestions.findFirst({
+          where: eq(seoKeywordSuggestions.workflowId, workflow.id),
         });
         return { artifact, workflow };
       }

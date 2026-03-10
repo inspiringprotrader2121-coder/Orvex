@@ -1,5 +1,6 @@
 import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
 import { getRedisConnection } from "@/lib/redis";
+import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 
 export type ListingIntelligenceJob = {
   payload: {
@@ -13,8 +14,11 @@ export type ListingIntelligenceJob = {
 
 export type CompetitorAnalysisJob = {
   payload: {
+    keyword?: string;
+    maxCompetitors: number;
+    productName?: string;
     projectId?: string;
-    url: string;
+    url?: string;
   };
   type: "competitor_analysis";
   userId: string;
@@ -44,17 +48,48 @@ export type ListingGeneratorJob = {
   workflowId: string;
 };
 
+type LaunchPackJobPayload = {
+  audience?: string;
+  category?: string;
+  description: string;
+  keyword?: string;
+  opportunityId?: string;
+  productName: string;
+  projectId?: string;
+};
+
 export type LaunchPackGenerationJob = {
+  payload: LaunchPackJobPayload;
+  type: "launch_pack_generation";
+  userId: string;
+  workflowId: string;
+};
+
+export type EtsyListingLaunchPackJob = {
+  payload: LaunchPackJobPayload;
+  type: "etsy_listing_launch_pack";
+  userId: string;
+  workflowId: string;
+};
+
+export type MultiChannelLaunchPackJob = {
   payload: {
-    audience?: string;
-    category?: string;
-    description: string;
-    keyword?: string;
-    opportunityId?: string;
     productName: string;
     projectId?: string;
+    productType: string;
+    targetAudience: string;
   };
-  type: "launch_pack_generation" | "etsy_listing_launch_pack";
+  type: "multi_channel_launch_pack";
+  userId: string;
+  workflowId: string;
+};
+
+export type SeoKeywordAnalysisJob = {
+  payload: {
+    inputText: string;
+    source: "niche" | "listing";
+  };
+  type: "seo_keyword_analysis";
   userId: string;
   workflowId: string;
 };
@@ -64,18 +99,17 @@ export type OrvexWorkflowJob =
   | CompetitorAnalysisJob
   | OpportunityAnalysisJob
   | ListingGeneratorJob
-  | LaunchPackGenerationJob;
+  | LaunchPackGenerationJob
+  | EtsyListingLaunchPackJob
+  | MultiChannelLaunchPackJob
+  | SeoKeywordAnalysisJob;
 
 export type OrvexWorkflowJobName = OrvexWorkflowJob["type"];
 
 const connection: ConnectionOptions = getRedisConnection();
+let workflowQueue: Queue<OrvexWorkflowJob> | null = null;
 
 export const defaultWorkflowJobOptions: JobsOptions = {
-  attempts: 3,
-  backoff: {
-    delay: 5_000,
-    type: "exponential",
-  },
   removeOnComplete: {
     age: 60 * 60,
     count: 1_000,
@@ -86,15 +120,28 @@ export const defaultWorkflowJobOptions: JobsOptions = {
   },
 };
 
-export const workflowQueue = new Queue<OrvexWorkflowJob>("workflows", { connection });
+export function getWorkflowQueue() {
+  if (!workflowQueue) {
+    workflowQueue = new Queue<OrvexWorkflowJob>("workflows", { connection });
+  }
+
+  return workflowQueue;
+}
 
 export function getWorkflowQueueConnection() {
   return connection;
 }
 
 export async function enqueueWorkflowJob(job: OrvexWorkflowJob, options?: JobsOptions) {
-  return workflowQueue.add(job.type, job, {
+  const definition = getWorkflowDefinition(job.type);
+  return getWorkflowQueue().add(job.type, job, {
+    attempts: definition.attempts,
+    backoff: {
+      delay: definition.backoffDelayMs,
+      type: "exponential",
+    },
     ...defaultWorkflowJobOptions,
+    priority: definition.priority,
     ...options,
   });
 }

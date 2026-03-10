@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { CreditService } from "@/lib/credits";
 import { getRequiredServerEnv } from "@/lib/server-env";
+import { StripeBillingService } from "@server/services/stripe-billing-service";
 
 function getStripeClient() {
   return new Stripe(getRequiredServerEnv("STRIPE_SECRET_KEY"));
@@ -33,31 +33,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  // Handle successful payments
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-
-    if (session.mode !== "payment" || session.payment_status !== "paid") {
-      console.warn("Ignoring Stripe checkout session that was not paid:", session.id);
-    } else if (!session.client_reference_id) {
-      console.warn("Stripe checkout session is missing client_reference_id:", session.id);
-    } else {
-      const metadataCredits = Number(session.metadata?.creditAmount ?? 0);
-      const creditsToAdd = Number.isFinite(metadataCredits) ? metadataCredits : 0;
-
-      if (creditsToAdd <= 0) {
-        console.warn("Stripe checkout session has no creditAmount metadata:", session.id);
-      } else {
-        await CreditService.addCreditsForStripeEvent(
-          session.client_reference_id,
-          creditsToAdd,
-          `Purchase: ${creditsToAdd} credits`,
-          event.id,
-          event.type,
-        );
-      }
-    }
+  try {
+    await StripeBillingService.processWebhookEvent(event);
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error("Stripe webhook processing failed:", error);
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 });
   }
-
-  return NextResponse.json({ received: true });
 }

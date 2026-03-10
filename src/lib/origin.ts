@@ -18,6 +18,15 @@ function normalizeOrigin(value: string | null) {
   }
 }
 
+export function isAllowedAppOrigin(candidate: string | null) {
+  const normalized = normalizeOrigin(candidate);
+  if (!normalized) {
+    return false;
+  }
+
+  return allowedOrigins.has(normalized);
+}
+
 function buildAllowedOrigins() {
   const origins = new Set<string>([defaultOrigin]);
 
@@ -53,7 +62,7 @@ function isOriginAllowed(candidate: string | null, requestOrigin: string) {
     return false;
   }
 
-  return normalized === requestOrigin || allowedOrigins.has(normalized);
+  return normalized === requestOrigin || isAllowedAppOrigin(normalized);
 }
 
 export function assertSameOrigin(request: Request) {
@@ -84,5 +93,5 @@ export function assertSameOrigin(request: Request) {
     return;
   }
 
-  // Allow requests without CORS metadata (CLI requests, server-to-server, etc.).
+  throw new InvalidOriginError("Missing trusted request origin metadata");
 }
