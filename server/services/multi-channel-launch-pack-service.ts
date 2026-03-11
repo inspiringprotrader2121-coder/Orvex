@@ -79,7 +79,61 @@ async function persistArtifact(input: {
 }
 
 export class MultiChannelLaunchPackService {
-  static async process(input: {
+  static async processChild(input: {
+    channelsToGenerate: string[];
+    productName: string;
+    productType: string;
+    targetAudience: string;
+    userId: string;
+    workflowId: string;
+  }) {
+    await WorkflowService.markProcessing(input.workflowId, 30);
+    const { z } = require("zod");
+    const { ChannelContentSchema } = require("@server/schemas/multi-channel-launch-pack");
+
+    const schemaProps: Record<string, any> = {};
+    for (const ch of input.channelsToGenerate) {
+      schemaProps[ch] = ChannelContentSchema;
+    }
+    const dynamicSchema = z.object({
+      channels: z.object(schemaProps)
+    });
+
+    const generated = await StructuredAiClient.generate({
+      maxCompletionTokens: 2_500,
+      schema: dynamicSchema,
+      system: `You are Orvex, a senior multi-channel launch strategist. Generate commercially sharp, platform-aware launch copy. 
+Follow these platform-specific rules:
+- Reddit: Focus on "community value" over sales. Use conversational, non-corporate titles. Suggest relevant subreddits in the 'description' field.
+- Pinterest: High-intent SEO focus. Titles should be "search-ready". Captions should be descriptive and invite the user to save/pin.
+- Instagram: Visual-first tone. Use emojis naturally. Provide 3 tiers of hashtags (Broad, Niche, Brand).
+- TikTok: Hook-focused. Captions must be short and include a clear CTA for the link in bio.`,
+      tracking: {
+        feature: "multi_channel_launch_pack",
+        userId: input.userId,
+        workflowId: input.workflowId,
+      },
+      user: `
+Create a specialized multi-channel launch pack for the following product:
+Product Name: ${input.productName}
+Product Type: ${input.productType}
+Target Audience: ${input.targetAudience}
+
+Generate tailored content ONLY for these channels:
+${input.channelsToGenerate.map(c => `- ${c}`).join("\n")}
+
+For each channel, provide:
+1. title: An engaging, platform-optimized headline.
+2. description: The primary body text or post content.
+3. hashtags: A string of 5-15 relevant tags.
+4. caption: A short, punchy summary for social sharing.
+      `.trim(),
+    });
+
+    return generated.channels;
+  }
+
+  static async processParent(job: any, input: {
     productName: string;
     productType: string;
     targetAudience: string;
@@ -89,89 +143,31 @@ export class MultiChannelLaunchPackService {
     const cacheKey = createCacheKey(input);
     const cacheClient = getCacheRedisClient();
 
-    await WorkflowService.markProcessing(input.workflowId, 30);
+    await WorkflowService.markProcessing(input.workflowId, 80);
 
-    const cachedValue = await cacheClient?.get(`multi-launch-pack:${cacheKey}`);
-    if (cachedValue) {
-      const cachedResult = MultiChannelLaunchPackSchema.parse(JSON.parse(cachedValue));
-      const result = {
-        ...cachedResult,
-        productName: input.productName,
-        productType: input.productType,
-        targetAudience: input.targetAudience,
-      };
-
-      await persistArtifact({
-        cacheHit: true,
-        channels: cachedResult.channels,
-        productName: input.productName,
-        productType: input.productType,
-        summary: cachedResult.summary,
-        targetAudience: input.targetAudience,
-        userId: input.userId,
-        workflowId: input.workflowId,
-      });
-
-      await AiUsageService.recordUsage({
-        cacheHit: true,
-        completionTokens: 0,
-        feature: "multi_channel_launch_pack",
-        metadata: { cacheKey },
-        model: env.aiModel,
-        promptTokens: 0,
-        totalTokens: 0,
-        userId: input.userId,
-        workflowId: input.workflowId,
-      });
-
-      return result;
+    const childValues = await job.getChildrenValues();
+    const mergedChannels: any = {};
+    for (const val of Object.values(childValues)) {
+       Object.assign(mergedChannels, val);
     }
 
-    await WorkflowService.markProcessing(input.workflowId, 65);
-
-    const generated = await StructuredAiClient.generate({
-      maxCompletionTokens: 2_600,
-      schema: MultiChannelLaunchPackSchema,
-      system: "You are Orvex, a senior multi-channel launch strategist for digital product sellers. Produce channel-specific launch copy that is commercially sharp and platform-aware. Return structured JSON only.",
+    const { z } = require("zod");
+    const generatedSummary = await StructuredAiClient.generate({
+      maxCompletionTokens: 500,
+      schema: z.object({ summary: z.string().trim().min(40).max(500) }),
+      system: "You are Orvex, a senior multi-channel launch strategist. Return structured JSON only.",
       tracking: {
         feature: "multi_channel_launch_pack",
         metadata: { cacheKey },
         userId: input.userId,
         workflowId: input.workflowId,
       },
-      user: `
-Create a multi-channel launch pack for this digital product.
-
-Product name: ${input.productName}
-Target audience: ${input.targetAudience}
-Product type: ${input.productType}
-
-Return channel-specific launch copy for:
-- Etsy
-- Shopify
-- Amazon
-- TikTok
-- Pinterest
-- Instagram
-
-For every channel return:
-- title
-- description
-- hashtags
-- caption
-
-Guidance:
-- Etsy should feel keyword-aware and marketplace-ready.
-- Shopify should feel like premium storefront copy.
-- Amazon should be clear, benefit-led, and catalog-friendly.
-- TikTok should be hook-driven and momentum-focused.
-- Pinterest should be discovery-friendly and click-oriented.
-- Instagram should feel social, polished, and creator-ready.
-      `.trim(),
+      user: `Write a brief 1-2 paragraph summary for the multi-channel launch strategy of the product: ${input.productName}`
     });
 
     const result = {
-      ...generated,
+      channels: mergedChannels,
+      summary: generatedSummary.summary,
       productName: input.productName,
       productType: input.productType,
       targetAudience: input.targetAudience,
@@ -181,10 +177,10 @@ Guidance:
 
     await persistArtifact({
       cacheHit: false,
-      channels: generated.channels,
+      channels: result.channels,
       productName: input.productName,
       productType: input.productType,
-      summary: generated.summary,
+      summary: result.summary,
       targetAudience: input.targetAudience,
       userId: input.userId,
       workflowId: input.workflowId,
@@ -201,11 +197,11 @@ Guidance:
 
     await cacheClient?.set(
       `multi-launch-pack:${cacheKey}`,
-      JSON.stringify(generated),
+      JSON.stringify({ channels: result.channels, summary: result.summary }),
       "EX",
       env.multiChannelLaunchPackCacheTtlSeconds,
     );
 
-    return result;
+    return result as MultiChannelLaunchPackResult;
   }
 }

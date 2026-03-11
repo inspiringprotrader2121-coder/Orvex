@@ -12,6 +12,7 @@ import {
 import { assertScrapableListingUrl } from "@server/scrapers";
 import { env } from "@server/utils/env";
 import { WorkflowService } from "./workflow-service";
+import { getWorkflowFlowProducer, defaultWorkflowJobOptions } from "@server/queues/workflow-queue";
 
 type WorkflowStartResult = {
   creditsCost: number;
@@ -177,6 +178,44 @@ export class WorkflowSubmissionService {
         payload,
         type: "multi_channel_launch_pack",
         userId,
+      },
+      enqueueJob: async (job: any) => {
+        const flowProducer = getWorkflowFlowProducer();
+        const requestedChannels = payload.channelsToGenerate || [];
+        
+        const children = [];
+        
+        // Define chunks
+        const chunks = [
+          { channels: ["etsy", "shopify"] },
+          { channels: ["amazon", "tiktok"] },
+          { channels: ["pinterest", "instagram"] }
+        ];
+
+        for (const chunk of chunks) {
+          const intersectingChannels = chunk.channels.filter(c => requestedChannels.includes(c));
+          if (intersectingChannels.length > 0) {
+            children.push({
+              name: "multi_channel_child",
+              queueName: "workflows",
+              data: {
+                type: "multi_channel_child",
+                userId,
+                workflowId: job.workflowId,
+                payload: { ...payload, channelsToGenerate: intersectingChannels }
+              },
+              opts: defaultWorkflowJobOptions,
+            });
+          }
+        }
+
+        await flowProducer.add({
+          name: "multi_channel_launch_pack",
+          queueName: "workflows",
+          data: job,
+          opts: defaultWorkflowJobOptions,
+          children
+        });
       },
       projectId: payload.projectId,
       sourceProvider: "internal",

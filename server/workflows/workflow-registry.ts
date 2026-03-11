@@ -5,6 +5,7 @@ export type RegisteredWorkflowType =
   | "listing_forge"
   | "launch_pack_generation"
   | "multi_channel_launch_pack"
+  | "multi_channel_child"
   | "mockup_generation"
   | "seo_keyword_analysis"
   | "etsy_listing_launch_pack";
@@ -64,6 +65,13 @@ const workflowRegistry: Record<RegisteredWorkflowType, WorkflowDefinition> = {
     featureKey: "mockup_generation",
     priority: 2,
     queueName: "mockups",
+  },
+  multi_channel_child: {
+    attempts: 5,
+    backoffDelayMs: 3_000,
+    featureKey: "multi_channel_launch_pack",
+    priority: 1,
+    queueName: "workflows",
   },
   multi_channel_launch_pack: {
     attempts: 5,

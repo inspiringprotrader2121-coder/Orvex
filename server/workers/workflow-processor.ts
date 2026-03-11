@@ -8,6 +8,7 @@ import { MultiChannelLaunchPackService } from "@server/services/multi-channel-la
 import { SeoKeywordService } from "@server/services/seo-keyword-service";
 import { OpportunityService } from "@server/services/opportunity-service";
 import { WorkflowService } from "@server/services/workflow-service";
+import { StoreTokenRefreshService } from "@server/services/store-token-refresh-service";
 import { env } from "@server/utils/env";
 
 const workflowHandlers: {
@@ -53,13 +54,23 @@ const workflowHandlers: {
     userId: job.userId,
     workflowId: job.workflowId,
   }) as Promise<Record<string, unknown>>,
-  multi_channel_launch_pack: async (job) => MultiChannelLaunchPackService.process({
+  multi_channel_child: async (job) => MultiChannelLaunchPackService.processChild({
+    channelsToGenerate: job.payload.channelsToGenerate,
     productName: job.payload.productName,
     productType: job.payload.productType,
     targetAudience: job.payload.targetAudience,
     userId: job.userId,
     workflowId: job.workflowId,
   }) as Promise<Record<string, unknown>>,
+  multi_channel_launch_pack: async (job) => {
+    return MultiChannelLaunchPackService.processParent(job, {
+      productName: job.payload.productName,
+      productType: job.payload.productType,
+      targetAudience: job.payload.targetAudience,
+      userId: job.userId,
+      workflowId: job.workflowId,
+    }) as Promise<Record<string, unknown>>;
+  },
   opportunity_analysis: async (job) => OpportunityService.process({
     keyword: job.payload.keyword,
     userId: job.userId,
@@ -71,10 +82,18 @@ const workflowHandlers: {
     userId: job.userId,
     workflowId: job.workflowId,
   }) as Promise<Record<string, unknown>>,
+  store_token_refresh: async () => {
+    await StoreTokenRefreshService.refreshExpiringTokens();
+    return { success: true };
+  },
 };
 
 export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
-  await WorkflowService.markProcessing(job.data.workflowId);
+  const isSystemJob = job.data.workflowId === "system";
+
+  if (!isSystemJob) {
+    await WorkflowService.markProcessing(job.data.workflowId);
+  }
 
   try {
     const handler = workflowHandlers[job.data.type];
@@ -83,10 +102,16 @@ export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
     }
 
     const result = await handler(job.data as never);
-    await WorkflowService.markCompleted(job.data.workflowId, result);
+    
+    if (!isSystemJob) {
+      await WorkflowService.markCompleted(job.data.workflowId, result);
+    }
+    
     return result;
   } catch (error) {
-    await WorkflowService.markFailed(job.data.workflowId, error);
+    if (!isSystemJob) {
+      await WorkflowService.markFailed(job.data.workflowId, error);
+    }
     throw error;
   }
 }

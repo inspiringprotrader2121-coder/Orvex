@@ -22,14 +22,20 @@ export function MultiChannelLaunchTabs({
   artifact: MultiChannelLaunchPackResult;
   className?: string;
 }) {
-  const [activeChannel, setActiveChannel] = useState<ChannelKey>("etsy");
+  const availableChannels = Object.keys(artifact.channels) as ChannelKey[];
+  const [activeChannel, setActiveChannel] = useState<ChannelKey>(
+    availableChannels[0] || "etsy"
+  );
   const channel = artifact.channels[activeChannel];
-  const hashtagsText = channel.hashtags.join(" ");
+  
+  if (!channel) return null;
+
+  const hashtagsText = (channel.hashtags || []).join(" ");
 
   return (
     <div className={`space-y-6 ${className}`}>
       <div className="flex flex-wrap gap-3">
-        {(Object.keys(channelLabels) as ChannelKey[]).map((channelKey) => {
+        {availableChannels.map((channelKey) => {
           const active = channelKey === activeChannel;
 
           return (
@@ -43,7 +49,7 @@ export function MultiChannelLaunchTabs({
                   : "border-white/10 bg-[#0A0A0B] text-gray-400 hover:border-white/20 hover:text-white"
               }`}
             >
-              {channelLabels[channelKey]}
+              {channelLabels[channelKey] || channelKey}
             </button>
           );
         })}

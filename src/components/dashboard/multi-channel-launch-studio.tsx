@@ -22,6 +22,22 @@ export function MultiChannelLaunchStudio({
     productType: "Digital template",
     targetAudience: "",
   });
+  const [channels, setChannels] = useState<string[]>([
+    "amazon",
+    "etsy",
+    "instagram",
+    "pinterest",
+    "shopify",
+    "tiktok",
+  ]);
+
+  const toggleChannel = (channel: string) => {
+    setChannels((prev) =>
+      prev.includes(channel)
+        ? prev.filter((c) => c !== channel)
+        : [...prev, channel]
+    );
+  };
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,11 +45,16 @@ export function MultiChannelLaunchStudio({
     setError("");
 
     try {
+      if (channels.length === 0) {
+        throw new Error("Please select at least one channel to generate content for.");
+      }
+
       const response = await fetch("/api/launchpack-multi", {
         body: JSON.stringify({
           productName: form.productName.trim(),
           productType: form.productType.trim(),
           targetAudience: form.targetAudience.trim(),
+          channelsToGenerate: channels,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -96,6 +117,58 @@ export function MultiChannelLaunchStudio({
             value={form.targetAudience}
             onChange={(value) => setForm((current) => ({ ...current, targetAudience: value }))}
           />
+
+          <div className="space-y-3 pt-2">
+            <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500">Channels to Generate</span>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                { id: "amazon", label: "Amazon" },
+                { id: "etsy", label: "Etsy" },
+                { id: "instagram", label: "Instagram" },
+                { id: "pinterest", label: "Pinterest" },
+                { id: "shopify", label: "Shopify" },
+                { id: "tiktok", label: "TikTok" },
+              ].map((channel) => (
+                <label
+                  key={channel.id}
+                  className={`flex cursor-pointer items-center gap-3 rounded-2xl border bg-[#0A0A0B] p-4 transition-all ${
+                    channels.includes(channel.id)
+                      ? "border-indigo-500/40 shadow-[0_0_15px_rgba(99,102,241,0.1)]"
+                      : "border-white/5 hover:border-white/20"
+                  }`}
+                >
+                  <div
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-white transition-all ${
+                      channels.includes(channel.id)
+                        ? "border-indigo-500 bg-indigo-500"
+                        : "border-gray-600 bg-transparent"
+                    }`}
+                  >
+                    {channels.includes(channel.id) && (
+                      <svg viewBox="0 0 14 14" fill="none" className="h-3.5 w-3.5">
+                        <path
+                          d="M3 8L6 11L11 3.5"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </div>
+                  <span className={`text-sm font-medium ${channels.includes(channel.id) ? "text-indigo-100" : "text-gray-400"}`}>
+                    {channel.label}
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={channels.includes(channel.id)}
+                    onChange={() => toggleChannel(channel.id)}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
 
           <button
             type="submit"
