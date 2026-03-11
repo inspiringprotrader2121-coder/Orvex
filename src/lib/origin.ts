@@ -1,6 +1,11 @@
 const defaultOrigin = (() => {
   try {
-    return new URL((process.env.NEXT_PUBLIC_APP_URL || "https://useorvex.com").trim()).origin;
+    return new URL((
+      process.env.APP_URL
+      || process.env.NEXTAUTH_URL
+      || process.env.NEXT_PUBLIC_APP_URL
+      || "https://useorvex.com"
+    ).trim()).origin;
   } catch {
     return "https://useorvex.com";
   }
@@ -65,12 +70,25 @@ function isOriginAllowed(candidate: string | null, requestOrigin: string) {
   return normalized === requestOrigin || isAllowedAppOrigin(normalized);
 }
 
+function getForwardedOrigin(request: Request) {
+  const forwardedProto = request.headers.get("x-forwarded-proto");
+  const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+
+  if (!forwardedProto || !forwardedHost) {
+    return null;
+  }
+
+  return normalizeOrigin(`${forwardedProto}://${forwardedHost}`);
+}
+
 export function assertSameOrigin(request: Request) {
   const requestOrigin = new URL(request.url).origin;
+  const forwardedOrigin = getForwardedOrigin(request);
+  const trustedOrigins = [requestOrigin, forwardedOrigin].filter((value): value is string => Boolean(value));
   const originHeader = request.headers.get("origin");
 
   if (originHeader) {
-    if (!isOriginAllowed(originHeader, requestOrigin)) {
+    if (!trustedOrigins.some((origin) => isOriginAllowed(originHeader, origin))) {
       throw new InvalidOriginError();
     }
     return;
@@ -78,7 +96,7 @@ export function assertSameOrigin(request: Request) {
 
   const refererHeader = request.headers.get("referer");
   if (refererHeader) {
-    if (!isOriginAllowed(refererHeader, requestOrigin)) {
+    if (!trustedOrigins.some((origin) => isOriginAllowed(refererHeader, origin))) {
       throw new InvalidOriginError();
     }
     return;

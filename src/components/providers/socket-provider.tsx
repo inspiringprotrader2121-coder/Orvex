@@ -17,6 +17,27 @@ const SocketContext = createContext<SocketContextType>({
 
 export const useSocket = () => useContext(SocketContext);
 
+function resolveSocketUrl() {
+    if (typeof window === "undefined") {
+        return process.env.NEXT_PUBLIC_SOCKET_URL || undefined;
+    }
+
+    const configuredUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim();
+    if (!configuredUrl) {
+        return undefined;
+    }
+
+    try {
+        const parsed = new URL(configuredUrl);
+        const mixedContent = window.location.protocol === "https:" && parsed.protocol !== "https:";
+
+        // Fall back to same-origin sockets when a public env var points to an insecure URL.
+        return mixedContent ? undefined : parsed.toString();
+    } catch {
+        return undefined;
+    }
+}
+
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     const socketRef = useRef<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -44,7 +65,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
                     return;
                 }
 
-                const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001", {
+                const socketInstance = io(resolveSocketUrl(), {
                     auth: { token },
                     reconnectionAttempts: 5,
                 });
