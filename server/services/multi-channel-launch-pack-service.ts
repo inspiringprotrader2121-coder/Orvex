@@ -1,13 +1,17 @@
+import type { Job } from "bullmq";
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import { db } from "@/lib/db";
 import { multiChannelLaunchPacks } from "@/lib/db/schema";
 import { getCacheRedisClient } from "@/lib/cache";
 import { StructuredAiClient } from "@server/ai/client";
-import { AiUsageService } from "@server/services/ai-usage-service";
 import {
-  MultiChannelLaunchPackSchema,
+  ChannelContentSchema,
+  type ChannelId,
   type MultiChannelLaunchPack,
+  MultiChannelLaunchPackSchema,
 } from "@server/schemas/multi-channel-launch-pack";
+import type { MultiChannelLaunchPackJob } from "@server/queues/workflow-queue";
 import { env } from "@server/utils/env";
 import { ModerationIngestService } from "./admin/moderation-ingest-service";
 import { WorkflowService } from "./workflow-service";
@@ -19,11 +23,13 @@ type MultiChannelLaunchPackResult = MultiChannelLaunchPack & {
 };
 
 function normalizeForCache(input: {
+  channelsToGenerate: ChannelId[];
   productName: string;
   productType: string;
   targetAudience: string;
 }) {
   return JSON.stringify({
+    channelsToGenerate: [...input.channelsToGenerate].sort(),
     productName: input.productName.trim().toLowerCase(),
     productType: input.productType.trim().toLowerCase(),
     targetAudience: input.targetAudience.trim().toLowerCase(),
@@ -32,6 +38,7 @@ function normalizeForCache(input: {
 }
 
 function createCacheKey(input: {
+  channelsToGenerate: ChannelId[];
   productName: string;
   productType: string;
   targetAudience: string;
@@ -42,6 +49,7 @@ function createCacheKey(input: {
 async function persistArtifact(input: {
   cacheHit: boolean;
   channels: MultiChannelLaunchPack["channels"];
+  channelsToGenerate: ChannelId[];
   productName: string;
   productType: string;
   summary: string;
@@ -80,7 +88,7 @@ async function persistArtifact(input: {
 
 export class MultiChannelLaunchPackService {
   static async processChild(input: {
-    channelsToGenerate: string[];
+    channelsToGenerate: ChannelId[];
     productName: string;
     productType: string;
     targetAudience: string;
@@ -88,15 +96,13 @@ export class MultiChannelLaunchPackService {
     workflowId: string;
   }) {
     await WorkflowService.markProcessing(input.workflowId, 30);
-    const { z } = require("zod");
-    const { ChannelContentSchema } = require("@server/schemas/multi-channel-launch-pack");
 
-    const schemaProps: Record<string, any> = {};
+    const schemaProps: Record<string, typeof ChannelContentSchema> = {};
     for (const ch of input.channelsToGenerate) {
       schemaProps[ch] = ChannelContentSchema;
     }
     const dynamicSchema = z.object({
-      channels: z.object(schemaProps)
+      channels: z.object(schemaProps),
     });
 
     const generated = await StructuredAiClient.generate({
@@ -120,7 +126,7 @@ Product Type: ${input.productType}
 Target Audience: ${input.targetAudience}
 
 Generate tailored content ONLY for these channels:
-${input.channelsToGenerate.map(c => `- ${c}`).join("\n")}
+${input.channelsToGenerate.map((channel) => `- ${channel}`).join("\n")}
 
 For each channel, provide:
 1. title: An engaging, platform-optimized headline.
@@ -133,7 +139,8 @@ For each channel, provide:
     return generated.channels;
   }
 
-  static async processParent(job: any, input: {
+  static async processParent(job: Job<MultiChannelLaunchPackJob>, input: {
+    channelsToGenerate: ChannelId[];
     productName: string;
     productType: string;
     targetAudience: string;
@@ -145,13 +152,14 @@ For each channel, provide:
 
     await WorkflowService.markProcessing(input.workflowId, 80);
 
-    const childValues = await job.getChildrenValues();
-    const mergedChannels: any = {};
-    for (const val of Object.values(childValues)) {
-       Object.assign(mergedChannels, val);
-    }
-
-    const { z } = require("zod");
+    const childValues = await job.getChildrenValues() as Record<string, MultiChannelLaunchPack["channels"]>;
+    const mergedChannels = Object.values(childValues).reduce<MultiChannelLaunchPack["channels"]>(
+      (accumulator, value) => ({
+        ...accumulator,
+        ...value,
+      }),
+      {},
+    );
     const generatedSummary = await StructuredAiClient.generate({
       maxCompletionTokens: 500,
       schema: z.object({ summary: z.string().trim().min(40).max(500) }),
@@ -165,11 +173,15 @@ For each channel, provide:
       user: `Write a brief 1-2 paragraph summary for the multi-channel launch strategy of the product: ${input.productName}`
     });
 
-    const result = {
+    const validatedResult = MultiChannelLaunchPackSchema.parse({
       channels: mergedChannels,
       summary: generatedSummary.summary,
+    });
+    const result = {
+      channels: validatedResult.channels,
       productName: input.productName,
       productType: input.productType,
+      summary: validatedResult.summary,
       targetAudience: input.targetAudience,
     };
 
@@ -178,6 +190,7 @@ For each channel, provide:
     await persistArtifact({
       cacheHit: false,
       channels: result.channels,
+      channelsToGenerate: input.channelsToGenerate,
       productName: input.productName,
       productType: input.productType,
       summary: result.summary,

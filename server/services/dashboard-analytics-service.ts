@@ -316,11 +316,12 @@ export class DashboardAnalyticsService {
           avg(trend_score)::int as "trendScore",
           avg(opportunity_score)::int as "opportunityScore"
         from opportunities
-        where created_at >= now() - interval '30 days'
+        where user_id = $1
+          and created_at >= now() - interval '30 days'
         group by keyword
         order by "opportunityScore" desc, "trendScore" desc
         limit 8
-      `),
+      `, [userId]),
       pool.query(`
         select
           listing_title as "listingTitle",
@@ -330,10 +331,11 @@ export class DashboardAnalyticsService {
           keyword_coverage as "keywordCoverage",
           source_url as "sourceUrl"
         from listing_analyses
-        where created_at >= now() - interval '30 days'
+        where user_id = $1
+          and created_at >= now() - interval '30 days'
         order by listing_score desc, seo_score desc
         limit 8
-      `),
+      `, [userId]),
     ]);
 
     const filteredWorkflows = workflowItems.filter((workflow) => {

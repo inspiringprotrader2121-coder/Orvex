@@ -1,5 +1,6 @@
-import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
+import { FlowProducer, Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
 import { getRedisConnection } from "@/lib/redis";
+import type { ChannelId } from "@server/schemas/multi-channel-launch-pack";
 import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 
 export type ListingIntelligenceJob = {
@@ -72,14 +73,30 @@ export type EtsyListingLaunchPackJob = {
   workflowId: string;
 };
 
+type MultiChannelJobPayload = {
+  channelsToGenerate: ChannelId[];
+  productName: string;
+  projectId?: string;
+  productType: string;
+  targetAudience: string;
+};
+
 export type MultiChannelLaunchPackJob = {
+  payload: MultiChannelJobPayload;
+  type: "multi_channel_launch_pack";
+  userId: string;
+  workflowId: string;
+};
+
+export type MultiChannelChildJob = {
   payload: {
+    channelsToGenerate: ChannelId[];
     productName: string;
     projectId?: string;
     productType: string;
     targetAudience: string;
   };
-  type: "multi_channel_launch_pack";
+  type: "multi_channel_child";
   userId: string;
   workflowId: string;
 };
@@ -102,11 +119,13 @@ export type OrvexWorkflowJob =
   | LaunchPackGenerationJob
   | EtsyListingLaunchPackJob
   | MultiChannelLaunchPackJob
+  | MultiChannelChildJob
   | SeoKeywordAnalysisJob;
 
 export type OrvexWorkflowJobName = OrvexWorkflowJob["type"];
 
 const connection: ConnectionOptions = getRedisConnection();
+let workflowFlowProducer: FlowProducer | null = null;
 let workflowQueue: Queue<OrvexWorkflowJob> | null = null;
 
 export const defaultWorkflowJobOptions: JobsOptions = {
@@ -132,9 +151,17 @@ export function getWorkflowQueueConnection() {
   return connection;
 }
 
-export async function enqueueWorkflowJob(job: OrvexWorkflowJob, options?: JobsOptions) {
-  const definition = getWorkflowDefinition(job.type);
-  return getWorkflowQueue().add(job.type, job, {
+export function getWorkflowFlowProducer() {
+  if (!workflowFlowProducer) {
+    workflowFlowProducer = new FlowProducer({ connection });
+  }
+
+  return workflowFlowProducer;
+}
+
+export function getWorkflowJobOptions(type: OrvexWorkflowJobName, options?: JobsOptions): JobsOptions {
+  const definition = getWorkflowDefinition(type);
+  return {
     attempts: definition.attempts,
     backoff: {
       delay: definition.backoffDelayMs,
@@ -143,5 +170,9 @@ export async function enqueueWorkflowJob(job: OrvexWorkflowJob, options?: JobsOp
     ...defaultWorkflowJobOptions,
     priority: definition.priority,
     ...options,
-  });
+  };
+}
+
+export async function enqueueWorkflowJob(job: OrvexWorkflowJob, options?: JobsOptions) {
+  return getWorkflowQueue().add(job.type, job, getWorkflowJobOptions(job.type, options));
 }

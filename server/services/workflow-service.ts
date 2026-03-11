@@ -10,7 +10,7 @@ import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/
 import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 import { CreditAccountService } from "./credit-service";
 
-type EnqueueableJob = OrvexWorkflowJob | MockupGenerationJob;
+type EnqueueableJob = Exclude<OrvexWorkflowJob, { type: "multi_channel_child" }> | MockupGenerationJob;
 
 type StartWorkflowInput<TJob extends EnqueueableJob> = {
   creditsCost: number;

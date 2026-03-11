@@ -4,8 +4,18 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, RadioTower } from "lucide-react";
 import { getErrorMessage } from "@/lib/errors";
+import type { ChannelId } from "@server/schemas/multi-channel-launch-pack";
 import type { MultiChannelLaunchPackResult } from "@/lib/workflows";
 import { MultiChannelLaunchTabs } from "./multi-channel-launch-tabs";
+
+const channelOptions: Array<{ id: ChannelId; label: string }> = [
+  { id: "amazon", label: "Amazon" },
+  { id: "etsy", label: "Etsy" },
+  { id: "instagram", label: "Instagram" },
+  { id: "pinterest", label: "Pinterest" },
+  { id: "shopify", label: "Shopify" },
+  { id: "tiktok", label: "TikTok" },
+];
 
 export function MultiChannelLaunchStudio({
   latestArtifact,
@@ -22,7 +32,7 @@ export function MultiChannelLaunchStudio({
     productType: "Digital template",
     targetAudience: "",
   });
-  const [channels, setChannels] = useState<string[]>([
+  const [channels, setChannels] = useState<ChannelId[]>([
     "amazon",
     "etsy",
     "instagram",
@@ -31,7 +41,7 @@ export function MultiChannelLaunchStudio({
     "tiktok",
   ]);
 
-  const toggleChannel = (channel: string) => {
+  const toggleChannel = (channel: ChannelId) => {
     setChannels((prev) =>
       prev.includes(channel)
         ? prev.filter((c) => c !== channel)
@@ -121,14 +131,7 @@ export function MultiChannelLaunchStudio({
           <div className="space-y-3 pt-2">
             <span className="text-xs font-bold uppercase tracking-[0.2em] text-gray-500">Channels to Generate</span>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {[
-                { id: "amazon", label: "Amazon" },
-                { id: "etsy", label: "Etsy" },
-                { id: "instagram", label: "Instagram" },
-                { id: "pinterest", label: "Pinterest" },
-                { id: "shopify", label: "Shopify" },
-                { id: "tiktok", label: "TikTok" },
-              ].map((channel) => (
+              {channelOptions.map((channel) => (
                 <label
                   key={channel.id}
                   className={`flex cursor-pointer items-center gap-3 rounded-2xl border bg-[#0A0A0B] p-4 transition-all ${

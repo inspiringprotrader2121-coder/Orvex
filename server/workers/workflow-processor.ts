@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import type { OrvexWorkflowJob } from "@server/queues/workflow-queue";
+import type { MultiChannelLaunchPackJob, OrvexWorkflowJob } from "@server/queues/workflow-queue";
 import { CompetitorAnalysisService } from "@server/services/competitor-analysis-service";
 import { LaunchPackService } from "@server/services/launch-pack-service";
 import { ListingGeneratorService } from "@server/services/listing-generator-service";
@@ -8,11 +8,12 @@ import { MultiChannelLaunchPackService } from "@server/services/multi-channel-la
 import { SeoKeywordService } from "@server/services/seo-keyword-service";
 import { OpportunityService } from "@server/services/opportunity-service";
 import { WorkflowService } from "@server/services/workflow-service";
-import { StoreTokenRefreshService } from "@server/services/store-token-refresh-service";
 import { env } from "@server/utils/env";
 
+type DirectWorkflowType = Exclude<OrvexWorkflowJob["type"], "multi_channel_launch_pack">;
+
 const workflowHandlers: {
-  [K in OrvexWorkflowJob["type"]]: (job: Extract<OrvexWorkflowJob, { type: K }>) => Promise<Record<string, unknown>>;
+  [K in DirectWorkflowType]: (job: Extract<OrvexWorkflowJob, { type: K }>) => Promise<Record<string, unknown>>;
 } = {
   competitor_analysis: async (job) => CompetitorAnalysisService.process({
     keyword: job.payload.keyword,
@@ -62,15 +63,6 @@ const workflowHandlers: {
     userId: job.userId,
     workflowId: job.workflowId,
   }) as Promise<Record<string, unknown>>,
-  multi_channel_launch_pack: async (job) => {
-    return MultiChannelLaunchPackService.processParent(job, {
-      productName: job.payload.productName,
-      productType: job.payload.productType,
-      targetAudience: job.payload.targetAudience,
-      userId: job.userId,
-      workflowId: job.workflowId,
-    }) as Promise<Record<string, unknown>>;
-  },
   opportunity_analysis: async (job) => OpportunityService.process({
     keyword: job.payload.keyword,
     userId: job.userId,
@@ -82,10 +74,6 @@ const workflowHandlers: {
     userId: job.userId,
     workflowId: job.workflowId,
   }) as Promise<Record<string, unknown>>,
-  store_token_refresh: async () => {
-    await StoreTokenRefreshService.refreshExpiringTokens();
-    return { success: true };
-  },
 };
 
 export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
@@ -96,6 +84,23 @@ export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
   }
 
   try {
+    if (job.data.type === "multi_channel_launch_pack") {
+      const result = await MultiChannelLaunchPackService.processParent(job as Job<MultiChannelLaunchPackJob>, {
+        channelsToGenerate: job.data.payload.channelsToGenerate,
+        productName: job.data.payload.productName,
+        productType: job.data.payload.productType,
+        targetAudience: job.data.payload.targetAudience,
+        userId: job.data.userId,
+        workflowId: job.data.workflowId,
+      });
+
+      if (!isSystemJob) {
+        await WorkflowService.markCompleted(job.data.workflowId, result);
+      }
+
+      return result;
+    }
+
     const handler = workflowHandlers[job.data.type];
     if (!handler) {
       throw new Error(`Unsupported job type: ${JSON.stringify(job.data)}`);

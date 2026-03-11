@@ -1,9 +1,10 @@
+import type { JobsOptions } from "bullmq";
 import { ListingUrlInputSchema } from "@server/schemas/listing-intelligence";
 import { ListingGeneratorInputSchema } from "@server/schemas/listing-generator";
 import { CompetitorAnalyzerInputSchema } from "@server/schemas/competitor-analysis";
 import { LaunchPackInputSchema } from "@server/schemas/launch-pack";
 import { OpportunityInputSchema } from "@server/schemas/opportunity";
-import { MultiChannelLaunchPackInputSchema } from "@server/schemas/multi-channel-launch-pack";
+import { MultiChannelLaunchPackInputSchema, type ChannelId } from "@server/schemas/multi-channel-launch-pack";
 import { MockupGenerationInputSchema } from "@server/schemas/mockup-generation";
 import {
   WorkflowSubmissionSchema,
@@ -12,7 +13,12 @@ import {
 import { assertScrapableListingUrl } from "@server/scrapers";
 import { env } from "@server/utils/env";
 import { WorkflowService } from "./workflow-service";
-import { getWorkflowFlowProducer, defaultWorkflowJobOptions } from "@server/queues/workflow-queue";
+import {
+  getWorkflowFlowProducer,
+  getWorkflowJobOptions,
+  type MultiChannelChildJob,
+  type MultiChannelLaunchPackJob,
+} from "@server/queues/workflow-queue";
 
 type WorkflowStartResult = {
   creditsCost: number;
@@ -179,21 +185,23 @@ export class WorkflowSubmissionService {
         type: "multi_channel_launch_pack",
         userId,
       },
-      enqueueJob: async (job: any) => {
+      enqueueJob: async (job: MultiChannelLaunchPackJob) => {
         const flowProducer = getWorkflowFlowProducer();
-        const requestedChannels = payload.channelsToGenerate || [];
-        
-        const children = [];
-        
-        // Define chunks
-        const chunks = [
+        const requestedChannels = payload.channelsToGenerate;
+        const children: Array<{
+          data: MultiChannelChildJob;
+          name: "multi_channel_child";
+          opts: JobsOptions;
+          queueName: "workflows";
+        }> = [];
+        const chunks: Array<{ channels: ChannelId[] }> = [
           { channels: ["etsy", "shopify"] },
           { channels: ["amazon", "tiktok"] },
-          { channels: ["pinterest", "instagram"] }
+          { channels: ["pinterest", "instagram"] },
         ];
 
         for (const chunk of chunks) {
-          const intersectingChannels = chunk.channels.filter(c => requestedChannels.includes(c));
+          const intersectingChannels = chunk.channels.filter((channel) => requestedChannels.includes(channel));
           if (intersectingChannels.length > 0) {
             children.push({
               name: "multi_channel_child",
@@ -202,9 +210,9 @@ export class WorkflowSubmissionService {
                 type: "multi_channel_child",
                 userId,
                 workflowId: job.workflowId,
-                payload: { ...payload, channelsToGenerate: intersectingChannels }
+                payload: { ...payload, channelsToGenerate: intersectingChannels },
               },
-              opts: defaultWorkflowJobOptions,
+              opts: getWorkflowJobOptions("multi_channel_child"),
             });
           }
         }
@@ -213,8 +221,8 @@ export class WorkflowSubmissionService {
           name: "multi_channel_launch_pack",
           queueName: "workflows",
           data: job,
-          opts: defaultWorkflowJobOptions,
-          children
+          opts: getWorkflowJobOptions("multi_channel_launch_pack"),
+          children,
         });
       },
       projectId: payload.projectId,

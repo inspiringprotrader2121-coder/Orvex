@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSocket } from "@/components/providers/socket-provider";
 import { getErrorMessage } from "@/lib/errors";
@@ -56,8 +56,14 @@ export function DashboardOverviewClient({
   const [loading, setLoading] = useState(false);
   const [rollbackPendingId, setRollbackPendingId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const hasHydrated = useRef(false);
 
   useEffect(() => {
+    if (!hasHydrated.current) {
+      hasHydrated.current = true;
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
