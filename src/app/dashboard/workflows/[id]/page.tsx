@@ -225,6 +225,9 @@ export default function WorkflowResultsPage() {
   const failureMessage = isWorkflowFailureResult(workflow.resultData)
     ? workflow.resultData.error
     : workflow.errorMessage || "This workflow failed before ORVEX could persist a result.";
+  const wasCanceled = isWorkflowFailureResult(workflow.resultData)
+    ? workflow.resultData.canceled === true
+    : typeof workflow.errorMessage === "string" && workflow.errorMessage.toLowerCase().includes("canceled");
 
   async function handleSeoApply() {
     if (!seoSuggestion) {
@@ -333,10 +336,10 @@ export default function WorkflowResultsPage() {
 
       {!isProcessing && workflow.status === "failed" ? (
         <div className="rounded-[2rem] border border-rose-500/20 bg-rose-500/10 p-8">
-          <h2 className="text-2xl font-black text-white">Workflow failed</h2>
+          <h2 className="text-2xl font-black text-white">{wasCanceled ? "Workflow canceled" : "Workflow failed"}</h2>
           <p className="mt-3 max-w-3xl text-sm leading-relaxed text-gray-300">{failureMessage}</p>
           <Link href="/dashboard/workflows/new" className="mt-6 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black">
-            Start another workflow
+            Queue another workflow
           </Link>
         </div>
       ) : null}

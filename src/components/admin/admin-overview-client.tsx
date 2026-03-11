@@ -104,7 +104,7 @@ export function AdminOverviewClient({
               <p className="mt-4 text-sm leading-relaxed text-slate-300">{data.autoScaling.summary}</p>
             </AdminShellCard>
             <div className="rounded-3xl border border-white/6 bg-[#0b1220] p-5 text-sm leading-relaxed text-slate-400">
-              Load-balancer friendly by design: admin APIs stay stateless, queue pressure lives in Redis, and process heartbeat/state is persisted in PostgreSQL.
+              Queue pressure is aggregated across workflow and mockup lanes, worker heartbeats stay in PostgreSQL, and host-level CPU/RAM/disk metrics are sampled from the node serving this admin request.
             </div>
           </div>
         </AdminSection>

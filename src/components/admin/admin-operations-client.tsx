@@ -66,6 +66,7 @@ type OperationsData = {
   };
   workers: Array<{
     backlogCount: number;
+    canRestart: boolean;
     cpuPercent: number;
     host: string;
     id: string;
@@ -119,13 +120,13 @@ export function AdminOperationsClient({
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
 
-  const handleQueueAction = (jobId: string, action: "cancel" | "retry") => {
+  const handleQueueAction = (jobId: string, queueName: string, action: "cancel" | "retry") => {
     startTransition(() => {
       void (async () => {
         try {
           setActionError("");
           await requestJson("/api/admin/queue-actions", {
-            body: { action, jobId },
+            body: { action, jobId, queueName },
             method: "POST",
           });
           await refresh();
@@ -280,15 +281,15 @@ export function AdminOperationsClient({
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => handleQueueAction(job.id, "retry")}
-                    disabled={job.state === "active" || job.state === "completed"}
+                    onClick={() => handleQueueAction(job.id, job.queueName, "retry")}
+                    disabled={job.state !== "failed"}
                     className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Retry
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleQueueAction(job.id, "cancel")}
+                    onClick={() => handleQueueAction(job.id, job.queueName, "cancel")}
                     disabled={job.state === "active" || job.state === "completed"}
                     className="rounded-full border border-white/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -424,9 +425,17 @@ export function AdminOperationsClient({
                   CPU {worker.cpuPercent}% • RAM {worker.memoryMb}MB • backlog {worker.backlogCount} • uptime {formatUptime(worker.uptimeSeconds)} • heartbeat {new Date(worker.lastHeartbeatAt).toLocaleString()}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">Assigned queues: {worker.queueNames.length ? worker.queueNames.join(", ") : "unassigned"}</p>
-                <button type="button" onClick={() => handleWorkerRestart(worker.id)} className="mt-4 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-300">
+                <button
+                  type="button"
+                  onClick={() => handleWorkerRestart(worker.id)}
+                  disabled={!worker.canRestart}
+                  className="mt-4 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
                   Restart
                 </button>
+                {!worker.canRestart ? (
+                  <p className="mt-2 text-xs text-amber-300">Restart is only available for worker processes on this admin host when PM2 control is enabled.</p>
+                ) : null}
                 <button type="button" onClick={() => handleWorkerQueues(worker.id, worker.queueNames)} className="mt-3 rounded-full border border-white/10 px-3 py-2 text-xs font-bold uppercase tracking-[0.2em] text-slate-300">
                   Assign queues
                 </button>

@@ -115,6 +115,7 @@ export class AdminUsersService {
     }
 
     params.push(limit);
+    const whereClause = where.length > 0 ? `where ${where.join(" and ")}` : "";
 
     const query = `
       select
@@ -133,7 +134,7 @@ export class AdminUsersService {
       from users u
       left join credits c on c.user_id = u.id
       left join workflows w on w.user_id = u.id
-      where ${where.join(" and ")}
+      ${whereClause}
       group by u.id, c.id
       order by ${toSortColumn(options.sort)}
       limit $${params.length}

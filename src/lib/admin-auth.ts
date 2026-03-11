@@ -68,6 +68,9 @@ export async function getAdminPermissions(roleKey: string) {
       where: eq(adminRoles.key, roleKey),
     });
     const permissions = roleRecord?.permissions as string[] | undefined;
+    if (roleKey === "super_admin") {
+      return permissions?.length ? permissions : ["*"];
+    }
     return permissions ?? FALLBACK_ROLE_PERMISSIONS[roleKey] ?? [];
   } catch {
     return FALLBACK_ROLE_PERMISSIONS[roleKey] ?? [];
@@ -79,11 +82,7 @@ export function hasAdminPermission(granted: AdminPermission[], required: AdminPe
 }
 
 export async function requireAdminPermission(requiredPermission: AdminPermission) {
-  const session = await auth();
-
-  if (!session?.user?.id) {
-    throw new AdminAuthorizationError("Unauthorized");
-  }
+  const session = await requireSuperAdminSession();
 
   const permissions = await getAdminPermissions(session.user.role);
   if (!hasPermission(permissions, requiredPermission)) {

@@ -28,6 +28,7 @@ export type OpportunityAnalysisResult = z.infer<typeof OpportunityAnalysisAiSche
 export type SeoKeywordResult = z.infer<typeof SeoKeywordResultSchema>;
 
 export interface WorkflowFailureResult {
+  canceled?: boolean;
   error: string;
 }
 

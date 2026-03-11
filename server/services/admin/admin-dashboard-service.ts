@@ -1,6 +1,6 @@
 import { pool } from "@/lib/db";
-import { getWorkflowQueue } from "@server/queues/workflow-queue";
 import { WorkerNodeService } from "./worker-node-service";
+import { getAdminQueueCounts } from "./admin-queue-service";
 
 type OverviewStat = {
   activeUsers: number;
@@ -112,7 +112,7 @@ export class AdminDashboardService {
   static async getOverview(): Promise<AdminOverviewPayload> {
     await WorkerNodeService.markStaleNodesOffline();
 
-    const queueCounts = await getWorkflowQueue().getJobCounts("waiting", "active", "completed", "failed", "delayed");
+    const queueCounts = await getAdminQueueCounts();
 
     const [
       statsResult,
@@ -181,6 +181,20 @@ export class AdminDashboardService {
         limit 8
       `),
       pool.query(`
+        with workflow_totals as (
+          select
+            user_id,
+            count(*)::int as "workflowCount"
+          from workflows
+          group by user_id
+        ),
+        billing_totals as (
+          select
+            user_id,
+            coalesce(sum(case when type in ('subscription', 'credits') then amount_cents else 0 end), 0)::int as "revenueCents"
+          from billing_records
+          group by user_id
+        )
         select
           u.id as "userId",
           u.email,
@@ -188,13 +202,12 @@ export class AdminDashboardService {
           u.subscription_tier as "subscriptionTier",
           u.last_login_at as "lastLoginAt",
           u.credits,
-          count(distinct w.id)::int as "workflowCount",
-          coalesce(sum(case when br.type in ('subscription', 'credits') then br.amount_cents else 0 end), 0)::int as "revenueCents"
+          coalesce(wt."workflowCount", 0)::int as "workflowCount",
+          coalesce(bt."revenueCents", 0)::int as "revenueCents"
         from users u
-        left join workflows w on w.user_id = u.id
-        left join billing_records br on br.user_id = u.id
+        left join workflow_totals wt on wt.user_id = u.id
+        left join billing_totals bt on bt.user_id = u.id
         where u.status <> 'deleted'
-        group by u.id
         order by "revenueCents" desc, "workflowCount" desc
         limit 8
       `),

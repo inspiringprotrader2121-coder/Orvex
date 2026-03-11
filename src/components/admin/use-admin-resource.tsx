@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSocket } from "@/components/providers/socket-provider";
 import { getErrorMessage } from "@/lib/errors";
 
@@ -10,6 +10,7 @@ type UseAdminResourceOptions = {
   eventNames?: string[];
   pollMs?: number;
   dependencies?: Array<unknown>;
+  eventDebounceMs?: number;
 };
 
 export function useAdminResource<T>(initialData: T, options: UseAdminResourceOptions) {
@@ -17,10 +18,13 @@ export function useAdminResource<T>(initialData: T, options: UseAdminResourceOpt
   const [data, setData] = useState<T>(initialData);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { buildEndpoint, dependencies, endpoint, eventNames, pollMs } = options;
+  const inFlightRefresh = useRef<Promise<void> | null>(null);
+  const pendingRefresh = useRef(false);
+  const scheduledRefresh = useRef<number | null>(null);
+  const { buildEndpoint, dependencies, endpoint, eventDebounceMs = 500, eventNames, pollMs } = options;
   const dependenciesKey = useMemo(() => JSON.stringify(dependencies ?? []), [dependencies]);
 
-  const refresh = useCallback(async () => {
+  const runRefresh = useCallback(async () => {
     const resolvedEndpoint = buildEndpoint ? buildEndpoint() : endpoint;
     if (!resolvedEndpoint) {
       throw new Error("Admin resource endpoint is required");
@@ -42,6 +46,35 @@ export function useAdminResource<T>(initialData: T, options: UseAdminResourceOpt
       setLoading(false);
     }
   }, [buildEndpoint, endpoint]);
+
+  const refresh = useCallback(async () => {
+    if (inFlightRefresh.current) {
+      pendingRefresh.current = true;
+      return inFlightRefresh.current;
+    }
+
+    const refreshPromise = runRefresh().finally(() => {
+      inFlightRefresh.current = null;
+      if (pendingRefresh.current) {
+        pendingRefresh.current = false;
+        void refresh();
+      }
+    });
+
+    inFlightRefresh.current = refreshPromise;
+    return refreshPromise;
+  }, [runRefresh]);
+
+  const scheduleRefresh = useCallback(() => {
+    if (scheduledRefresh.current !== null) {
+      window.clearTimeout(scheduledRefresh.current);
+    }
+
+    scheduledRefresh.current = window.setTimeout(() => {
+      scheduledRefresh.current = null;
+      void refresh();
+    }, eventDebounceMs);
+  }, [eventDebounceMs, refresh]);
 
   useEffect(() => {
     if (!dependencies || dependencies.length === 0) {
@@ -72,7 +105,7 @@ export function useAdminResource<T>(initialData: T, options: UseAdminResourceOpt
 
     const events = eventNames ?? ["admin.data.changed"];
     const handleEvent = () => {
-      void refresh();
+      scheduleRefresh();
     };
 
     for (const eventName of events) {
@@ -84,7 +117,13 @@ export function useAdminResource<T>(initialData: T, options: UseAdminResourceOpt
         socket.off(eventName, handleEvent);
       }
     };
-  }, [eventNames, refresh, socket]);
+  }, [eventNames, scheduleRefresh, socket]);
+
+  useEffect(() => () => {
+    if (scheduledRefresh.current !== null) {
+      window.clearTimeout(scheduledRefresh.current);
+    }
+  }, []);
 
   return {
     data,

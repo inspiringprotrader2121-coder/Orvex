@@ -8,9 +8,17 @@ import { adminAlerts, adminQueueMetrics, adminSettings, workerNodes } from "@/li
 import { createAdminRealtimeEvent } from "@/lib/admin/events";
 import { notifyAdminEvent } from "@/lib/socket-internal";
 import { desc, eq } from "drizzle-orm";
-import { getWorkflowQueue } from "@server/queues/workflow-queue";
+import { WorkflowService } from "@server/services/workflow-service";
 import { AdminAuditService } from "./admin-audit-service";
 import { AdminAlertService, type AlertThresholds } from "./admin-alert-service";
+import {
+  type AdminQueueName,
+  getAdminCompletedJobs,
+  getAdminJobs,
+  getAdminQueue,
+  getAdminQueueCounts,
+  getWorkflowIdFromJob,
+} from "./admin-queue-service";
 import { WorkerNodeService } from "./worker-node-service";
 
 const execAsync = promisify(exec);
@@ -20,6 +28,7 @@ type QueueActionInput = {
   actorUserId: string;
   ipAddress?: string | null;
   jobId: string;
+  queueName: AdminQueueName;
 };
 
 type AlertStatusInput = {
@@ -111,8 +120,8 @@ function computeScalingRecommendation(input: {
   const risingPressure = backlogTrend === "rising" && input.queueDepth >= Math.round(backlogThreshold * 0.7);
   const lowPressure = input.queueDepth <= Math.round(backlogThreshold * 0.35);
 
-  if ((highPressure || risingPressure) && input.workerCount > 0) {
-    const recommendedWorkers = input.workerCount + 1;
+  if (highPressure || risingPressure) {
+    const recommendedWorkers = Math.max(1, input.workerCount + 1);
     return {
       action: "scale_up",
       backlogTrend,
@@ -144,29 +153,25 @@ function computeScalingRecommendation(input: {
 
 export class AdminOperationsService {
   static async getOperationsSnapshot() {
-    await WorkerNodeService.heartbeat({
-      cpuPercent: Math.round((os.loadavg()[0] ?? 0) * 100),
-      host: os.hostname(),
-      memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-      nodeName: process.env.WEB_NODE_NAME || "orvex-web",
-      pm2ProcessName: "orvex-web",
-      role: "web",
-      status: "healthy",
-      uptimeSeconds: Math.round(process.uptime()),
-    });
-
     await WorkerNodeService.markStaleNodesOffline();
 
     const thresholds = await getAlertThresholds();
-    const workflowQueue = getWorkflowQueue();
-    const queueCounts = await workflowQueue.getJobCounts("waiting", "active", "completed", "failed", "delayed");
-    const [jobs, completedJobs, workers, dbStatus, redisStatus, alerts] = await Promise.all([
-      workflowQueue.getJobs(["active", "waiting", "failed", "delayed", "completed"], 0, 20, true),
-      workflowQueue.getJobs(["completed"], 0, 50, true),
+    const queueCounts = await getAdminQueueCounts();
+    const [jobs, completedJobs, workers, workerSummaryResult, dbStatus, redisStatus, alerts] = await Promise.all([
+      getAdminJobs(["active", "waiting", "failed", "delayed", "completed"], 20),
+      getAdminCompletedJobs(50),
       db.query.workerNodes.findMany({
+        where: eq(workerNodes.role, "worker"),
         limit: 20,
         orderBy: [desc(workerNodes.updatedAt)],
       }),
+      pool.query(`
+        select
+          count(*)::int as "workerCount",
+          count(*) filter (where status = 'offline')::int as "offlineWorkers"
+        from worker_nodes
+        where role = 'worker'
+      `),
       pool.query("select 1 as ok"),
       getCacheRedisClient()?.ping().catch(() => null) ?? Promise.resolve(null),
       db.query.adminAlerts.findMany({
@@ -175,9 +180,10 @@ export class AdminOperationsService {
       }),
     ]);
 
-    const staleWorkers = workers.filter((worker) => worker.status === "offline").length;
+    const workerSummary = (workerSummaryResult.rows[0] ?? {}) as Record<string, unknown>;
+    const staleWorkers = Number(workerSummary.offlineWorkers ?? 0);
     const queueDepth = queueCounts.waiting + queueCounts.active + queueCounts.delayed;
-    const workerCount = workers.length;
+    const workerCount = Number(workerSummary.workerCount ?? 0);
 
     await recordQueueMetric({
       queueCounts: {
@@ -309,19 +315,38 @@ export class AdminOperationsService {
   }
 
   static async handleQueueAction(input: QueueActionInput) {
-    const job = await getWorkflowQueue().getJob(input.jobId);
+    const queue = getAdminQueue(input.queueName);
+    if (!queue) {
+      throw new Error("Queue not found");
+    }
+
+    const job = await queue.getJob(input.jobId);
     if (!job) {
       throw new Error("Job not found");
     }
 
+    const state = await job.getState();
+    const workflowId = getWorkflowIdFromJob(job);
+
     if (input.action === "retry") {
+      if (state !== "failed") {
+        throw new Error("Only failed jobs can be retried");
+      }
       await job.retry();
+      if (workflowId) {
+        await WorkflowService.markQueued(workflowId);
+      }
     } else {
-      const state = await job.getState();
       if (state === "active") {
         throw new Error("Active jobs cannot be cancelled safely");
       }
+      if (state === "completed") {
+        throw new Error("Completed jobs cannot be cancelled");
+      }
       await job.remove();
+      if (workflowId) {
+        await WorkflowService.markCanceled(workflowId);
+      }
     }
 
     await AdminAuditService.log({
@@ -333,6 +358,7 @@ export class AdminOperationsService {
       metadata: {
         jobName: job.name,
         queueName: job.queueName,
+        workflowId,
       },
     });
 
@@ -343,6 +369,7 @@ export class AdminOperationsService {
       payload: {
         jobName: job.name,
         queueName: job.queueName,
+        workflowId,
       },
       type: "admin.queue.updated",
     }));
@@ -401,15 +428,15 @@ export class AdminOperationsService {
       throw new Error("Worker node not found");
     }
 
-      if (input.action === "assign") {
-        const nextQueues = (input.queueNames ?? []).map((queue) => queue.trim()).filter(Boolean);
-        await db.update(workerNodes).set({
-          metadata: {
-            ...((node.metadata as Record<string, unknown> | undefined) ?? {}),
-            assignedQueueNames: nextQueues,
-          },
-          updatedAt: new Date(),
-        }).where(eq(workerNodes.id, node.id));
+    if (input.action === "assign") {
+      const nextQueues = (input.queueNames ?? []).map((queue) => queue.trim()).filter(Boolean);
+      await db.update(workerNodes).set({
+        metadata: {
+          ...((node.metadata as Record<string, unknown> | undefined) ?? {}),
+          assignedQueueNames: nextQueues,
+        },
+        updatedAt: new Date(),
+      }).where(eq(workerNodes.id, node.id));
 
       await AdminAuditService.log({
         action: "worker.assign",
@@ -441,11 +468,17 @@ export class AdminOperationsService {
     }
 
     const canRunPm2 = process.env.ENABLE_ADMIN_PM2_ACTIONS === "true";
+    const isLocalNode = node.host === os.hostname();
     let result = "pm2 actions disabled";
 
     if (canRunPm2 && input.action === "restart") {
+      if (!isLocalNode) {
+        throw new Error("Remote worker restarts require external orchestration. This admin node can only restart local PM2 processes.");
+      }
       const { stdout, stderr } = await execAsync(`pm2 restart ${node.pm2ProcessName}`);
       result = [stdout, stderr].filter(Boolean).join("\n").trim() || "pm2 restart requested";
+    } else if (input.action === "restart" && !isLocalNode) {
+      throw new Error("Remote worker restarts require external orchestration. This admin node can only restart local PM2 processes.");
     }
 
     await AdminAuditService.log({

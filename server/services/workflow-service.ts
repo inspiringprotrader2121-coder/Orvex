@@ -25,6 +25,10 @@ type StartWorkflowInput<TJob extends EnqueueableJob> = {
 };
 
 export class WorkflowService {
+  private static isTerminalStatus(status: typeof workflows.$inferSelect.status) {
+    return status === "completed" || status === "failed";
+  }
+
   private static async enqueueQueuedJob(job: EnqueueableJob) {
     const definition = getWorkflowDefinition(job.type);
 
@@ -138,6 +142,36 @@ export class WorkflowService {
     }
   }
 
+  static async markQueued(workflowId: string) {
+    const existing = await db.query.workflows.findFirst({
+      where: eq(workflows.id, workflowId),
+    });
+
+    if (!existing) {
+      return;
+    }
+
+    await db.update(workflows)
+      .set({
+        errorMessage: null,
+        progress: 0,
+        resultData: null,
+        status: "queued",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflows.id, workflowId));
+
+    if (existing.batchId && this.isTerminalStatus(existing.status)) {
+      await this.adjustBatchCounters(existing.batchId, {
+        completed: existing.status === "completed" ? -1 : 0,
+        failed: existing.status === "failed" ? -1 : 0,
+      });
+      await this.syncBatchStatus(existing.batchId);
+    }
+
+    notifyJobUpdate(existing.userId, workflowId, "queued");
+  }
+
   static async markCompleted(workflowId: string, resultData: Record<string, unknown>) {
     const [workflow] = await db.update(workflows)
       .set({
@@ -179,6 +213,33 @@ export class WorkflowService {
     }
   }
 
+  static async markCanceled(workflowId: string, reason = "Workflow canceled by super admin") {
+    const existing = await db.query.workflows.findFirst({
+      where: eq(workflows.id, workflowId),
+    });
+
+    if (!existing) {
+      return;
+    }
+
+    await db.update(workflows)
+      .set({
+        errorMessage: reason,
+        resultData: {
+          canceled: true,
+          error: reason,
+        },
+        status: "failed",
+        updatedAt: new Date(),
+      })
+      .where(eq(workflows.id, workflowId))
+
+    notifyJobUpdate(existing.userId, workflowId, "failed");
+    if (existing.batchId && !this.isTerminalStatus(existing.status)) {
+      await this.bumpBatchCounters(existing.batchId, "failed");
+    }
+  }
+
   static async createBatch(userId: string, fileName: string, totalJobs: number) {
     const [batch] = await db.insert(workflowBatches).values({
       completedJobs: 0,
@@ -207,26 +268,45 @@ export class WorkflowService {
   }
 
   private static async bumpBatchCounters(batchId: string, outcome: "completed" | "failed") {
-    const [updated] = await db.update(workflowBatches)
+    await this.adjustBatchCounters(batchId, {
+      completed: outcome === "completed" ? 1 : 0,
+      failed: outcome === "failed" ? 1 : 0,
+    });
+
+    await this.syncBatchStatus(batchId);
+  }
+
+  private static async adjustBatchCounters(batchId: string, delta: { completed: number; failed: number }) {
+    await db.update(workflowBatches)
       .set({
-        completedJobs: outcome === "completed" ? sql`${workflowBatches.completedJobs} + 1` : workflowBatches.completedJobs,
-        failedJobs: outcome === "failed" ? sql`${workflowBatches.failedJobs} + 1` : workflowBatches.failedJobs,
+        completedJobs: delta.completed === 0
+          ? workflowBatches.completedJobs
+          : sql`greatest(${workflowBatches.completedJobs} + ${delta.completed}, 0)`,
+        failedJobs: delta.failed === 0
+          ? workflowBatches.failedJobs
+          : sql`greatest(${workflowBatches.failedJobs} + ${delta.failed}, 0)`,
         updatedAt: new Date(),
       })
       .where(eq(workflowBatches.id, batchId))
-      .returning({
-        completedJobs: workflowBatches.completedJobs,
-        failedJobs: workflowBatches.failedJobs,
-        totalJobs: workflowBatches.totalJobs,
-      });
+      .returning({ id: workflowBatches.id });
+  }
 
-    if (!updated) {
+  private static async syncBatchStatus(batchId: string) {
+    const [batch] = await db.select({
+      completedJobs: workflowBatches.completedJobs,
+      failedJobs: workflowBatches.failedJobs,
+      totalJobs: workflowBatches.totalJobs,
+    })
+      .from(workflowBatches)
+      .where(eq(workflowBatches.id, batchId));
+
+    if (!batch) {
       return;
     }
 
     const finalStatus =
-      updated.completedJobs + updated.failedJobs >= updated.totalJobs
-        ? (updated.failedJobs > 0 ? "failed" : "completed")
+      batch.completedJobs + batch.failedJobs >= batch.totalJobs
+        ? (batch.failedJobs > 0 ? "failed" : "completed")
         : "processing";
 
     await db.update(workflowBatches)

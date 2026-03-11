@@ -9,6 +9,7 @@ export async function POST(request: Request) {
     const body = await request.json() as {
       action: "cancel" | "retry";
       jobId: string;
+      queueName: "mockups" | "workflows";
     };
 
     await AdminOperationsService.handleQueueAction({
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
       actorUserId: session.user.id,
       ipAddress: getRequestIp(request),
       jobId: body.jobId,
+      queueName: body.queueName,
     });
 
     return NextResponse.json({ success: true });

@@ -49,11 +49,11 @@ io.on("connection", (socket) => {
   console.log(`[Socket] Client connected: ${socket.id}`);
   const auth = socket.data.auth as SocketTokenPayload;
 
-  if (auth.role === "user") {
+  if (auth.role !== "internal") {
     socket.join(`user:${auth.sub}`);
   }
 
-  if (auth.role === "super_admin" || auth.role === "admin" || auth.role === "moderator") {
+  if (auth.role === "super_admin") {
     socket.join("admin");
   }
 

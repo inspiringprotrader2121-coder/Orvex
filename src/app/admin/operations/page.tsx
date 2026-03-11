@@ -35,6 +35,7 @@ export default async function AdminOperationsPage() {
 
       return {
         backlogCount: worker.backlogCount,
+        canRestart: worker.host === data.health.hostname && process.env.ENABLE_ADMIN_PM2_ACTIONS === "true",
         cpuPercent: worker.cpuPercent,
         host: worker.host,
         id: worker.id,
