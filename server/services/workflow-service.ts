@@ -1,22 +1,19 @@
 import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
-import { workflowBatches, workflows } from "@/lib/db/schema";
-import { notifyJobUpdate } from "@/lib/socket-internal";
+import { workflowBatches, workflowOutbox, workflows } from "@/lib/db/schema";
 import { getErrorMessage } from "@/lib/errors";
-import { enqueueWorkflowJob, type OrvexWorkflowJob } from "@server/queues/workflow-queue";
-import { enqueueMockupJob, type MockupGenerationJob } from "@server/queues/mockup-queue";
+import { notifyJobUpdate } from "@/lib/socket-internal";
 import { env } from "@server/utils/env";
-import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
-import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
+import { RateLimitExceededError } from "@server/utils/errors";
 import { CreditAccountService } from "./credit-service";
+import { WorkflowOutboxService, type DispatchableWorkflowJobData } from "./workflow-outbox-service";
 
-type EnqueueableJob = Exclude<OrvexWorkflowJob, { type: "multi_channel_child" }> | MockupGenerationJob;
-
-type StartWorkflowInput<TJob extends EnqueueableJob> = {
+type StartWorkflowInput<TJob extends DispatchableWorkflowJobData> = {
+  batchId?: string;
   creditsCost: number;
   inputData: Record<string, unknown>;
-  job: Omit<TJob, "workflowId">;
-  enqueueJob?: (job: TJob) => Promise<unknown>;
+  job: TJob;
   projectId?: string;
   skipRateLimit?: boolean;
   sourceProvider?: "amazon" | "etsy" | "gumroad" | "internal" | "shopify";
@@ -27,17 +24,6 @@ type StartWorkflowInput<TJob extends EnqueueableJob> = {
 export class WorkflowService {
   private static isTerminalStatus(status: typeof workflows.$inferSelect.status) {
     return status === "completed" || status === "failed";
-  }
-
-  private static async enqueueQueuedJob(job: EnqueueableJob) {
-    const definition = getWorkflowDefinition(job.type);
-
-    if (definition.queueName === "mockups") {
-      await enqueueMockupJob(job as MockupGenerationJob);
-      return;
-    }
-
-    await enqueueWorkflowJob(job as OrvexWorkflowJob);
   }
 
   static async assertSubmissionRateLimit(userId: string) {
@@ -53,78 +39,51 @@ export class WorkflowService {
     }
   }
 
-  static async startWorkflow<TJob extends EnqueueableJob>(userId: string, input: StartWorkflowInput<TJob>) {
+  static async startWorkflow<TJob extends DispatchableWorkflowJobData>(userId: string, input: StartWorkflowInput<TJob>) {
     if (!input.skipRateLimit) {
       await this.assertSubmissionRateLimit(userId);
     }
 
-    let workflowId: string | null = null;
+    const workflowId = randomUUID();
 
-    try {
-      await CreditAccountService.deductCredits({
-        amount: input.creditsCost,
-        metadata: { workflowType: input.job.type },
-        reason: `Workflow: ${input.job.type}`,
-        userId,
-      });
-    } catch (error) {
-      if (error instanceof InsufficientCreditsError) {
-        throw error;
-      }
-      throw new Error(`Unable to reserve credits: ${getErrorMessage(error)}`);
-    }
-
-    try {
-      const [workflow] = await db.insert(workflows).values({
+    await db.transaction(async (tx) => {
+      await tx.insert(workflows).values({
+        batchId: input.batchId ?? null,
         creditsSpent: input.creditsCost,
+        id: workflowId,
         inputData: input.inputData,
         progress: 0,
         projectId: input.projectId ?? null,
         sourceProvider: input.sourceProvider ?? "internal",
-        storeConnectionId: input.storeConnectionId ?? null,
         sourceUrl: input.sourceUrl ?? null,
-        status: "queued",
+        status: "pending",
+        storeConnectionId: input.storeConnectionId ?? null,
         type: input.job.type,
         userId,
-      }).returning({ id: workflows.id });
-
-      workflowId = workflow.id;
-      const queuedJob = {
-        ...input.job,
-        workflowId,
-      } as TJob;
-
-      if (input.enqueueJob) {
-        await input.enqueueJob(queuedJob);
-      } else {
-        await this.enqueueQueuedJob(queuedJob);
-      }
-
-      notifyJobUpdate(userId, workflowId, "queued");
-      return workflowId;
-    } catch (error) {
-      await CreditAccountService.addCredits({
-        amount: input.creditsCost,
-        metadata: { workflowType: input.job.type },
-        reason: `Refund: ${input.job.type} failed to enqueue`,
-        revertUsage: true,
-        userId,
-        workflowId: workflowId ?? undefined,
       });
 
-      if (workflowId) {
-        await db.update(workflows)
-          .set({
-            errorMessage: getErrorMessage(error),
-            progress: 0,
-            status: "failed",
-            updatedAt: new Date(),
-          })
-          .where(eq(workflows.id, workflowId));
-      }
+      await CreditAccountService.deductCreditsTx(tx, {
+        amount: input.creditsCost,
+        metadata: { workflowType: input.job.type },
+        reason: `Workflow: ${input.job.type}`,
+        userId,
+        workflowId,
+      });
 
-      throw error;
-    }
+      await tx.insert(workflowOutbox).values({
+        jobData: input.job,
+        jobType: input.job.type,
+        nextAttemptAt: new Date(),
+        status: "pending",
+        userId,
+        workflowId,
+      });
+    });
+
+    notifyJobUpdate(userId, workflowId, "pending");
+    void WorkflowOutboxService.dispatchWorkflow(workflowId);
+
+    return workflowId;
   }
 
   static async markProcessing(workflowId: string, progress = 15) {

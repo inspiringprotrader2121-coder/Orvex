@@ -4,6 +4,8 @@ import { creditTransactions, credits, users } from "@/lib/db/schema";
 import { notifyCreditsUpdate } from "@/lib/socket-internal";
 import { InsufficientCreditsError } from "@server/utils/errors";
 
+type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 type CreditMutationInput = {
   amount: number;
   metadata?: Record<string, unknown>;
@@ -14,6 +16,22 @@ type CreditMutationInput = {
 };
 
 export class CreditAccountService {
+  static async ensureAccountTx(tx: DbTransaction, userId: string) {
+    const user = await tx.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { credits: true },
+    });
+
+    await tx.insert(credits)
+      .values({
+        creditsAvailable: user?.credits ?? 0,
+        creditsUsed: 0,
+        updatedAt: new Date(),
+        userId,
+      })
+      .onConflictDoNothing({ target: credits.userId });
+  }
+
   static async ensureAccount(userId: string) {
     const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
@@ -45,43 +63,7 @@ export class CreditAccountService {
     await this.ensureAccount(input.userId);
 
     const result = await db.transaction(async (tx) => {
-      const [account] = await tx
-        .select({
-          creditsAvailable: credits.creditsAvailable,
-        })
-        .from(credits)
-        .where(eq(credits.userId, input.userId))
-        .for("update");
-
-      if (!account || account.creditsAvailable < input.amount) {
-        throw new InsufficientCreditsError();
-      }
-
-      const [updated] = await tx.update(credits)
-        .set({
-          creditsAvailable: sql`${credits.creditsAvailable} - ${input.amount}`,
-          creditsUsed: sql`${credits.creditsUsed} + ${input.amount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(credits.userId, input.userId))
-        .returning({ creditsAvailable: credits.creditsAvailable });
-
-      await tx.update(users)
-        .set({
-          credits: sql`${users.credits} - ${input.amount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, input.userId));
-
-      await tx.insert(creditTransactions).values({
-        amount: -Math.abs(input.amount),
-        metadata: input.metadata ?? {},
-        reason: input.reason,
-        userId: input.userId,
-        workflowId: input.workflowId ?? null,
-      });
-
-      return updated;
+      return this.deductCreditsTx(tx, input);
     });
 
     notifyCreditsUpdate(input.userId, result?.creditsAvailable ?? 0);
@@ -92,37 +74,85 @@ export class CreditAccountService {
     await this.ensureAccount(input.userId);
 
     const result = await db.transaction(async (tx) => {
-      const [updated] = await tx.update(credits)
-        .set({
-          creditsAvailable: sql`${credits.creditsAvailable} + ${input.amount}`,
-          ...(input.revertUsage
-            ? { creditsUsed: sql`GREATEST(${credits.creditsUsed} - ${Math.abs(input.amount)}, 0)` }
-            : {}),
-          updatedAt: new Date(),
-        })
-        .where(eq(credits.userId, input.userId))
-        .returning({ creditsAvailable: credits.creditsAvailable });
-
-      await tx.update(users)
-        .set({
-          credits: sql`${users.credits} + ${input.amount}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, input.userId));
-
-      await tx.insert(creditTransactions).values({
-        amount: Math.abs(input.amount),
-        metadata: input.metadata ?? {},
-        reason: input.reason,
-        userId: input.userId,
-        workflowId: input.workflowId ?? null,
-      });
-
-      return updated;
+      return this.addCreditsTx(tx, input);
     });
 
     notifyCreditsUpdate(input.userId, result?.creditsAvailable ?? 0);
     return result;
+  }
+
+  static async deductCreditsTx(tx: DbTransaction, input: CreditMutationInput) {
+    await this.ensureAccountTx(tx, input.userId);
+
+    const [account] = await tx
+      .select({
+        creditsAvailable: credits.creditsAvailable,
+      })
+      .from(credits)
+      .where(eq(credits.userId, input.userId))
+      .for("update");
+
+    if (!account || account.creditsAvailable < input.amount) {
+      throw new InsufficientCreditsError();
+    }
+
+    const [updated] = await tx.update(credits)
+      .set({
+        creditsAvailable: sql`${credits.creditsAvailable} - ${input.amount}`,
+        creditsUsed: sql`${credits.creditsUsed} + ${input.amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(credits.userId, input.userId))
+      .returning({ creditsAvailable: credits.creditsAvailable });
+
+    await tx.update(users)
+      .set({
+        credits: sql`${users.credits} - ${input.amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, input.userId));
+
+    await tx.insert(creditTransactions).values({
+      amount: -Math.abs(input.amount),
+      metadata: input.metadata ?? {},
+      reason: input.reason,
+      userId: input.userId,
+      workflowId: input.workflowId ?? null,
+    });
+
+    return updated;
+  }
+
+  static async addCreditsTx(tx: DbTransaction, input: CreditMutationInput) {
+    await this.ensureAccountTx(tx, input.userId);
+
+    const [updated] = await tx.update(credits)
+      .set({
+        creditsAvailable: sql`${credits.creditsAvailable} + ${input.amount}`,
+        ...(input.revertUsage
+          ? { creditsUsed: sql`GREATEST(${credits.creditsUsed} - ${Math.abs(input.amount)}, 0)` }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(credits.userId, input.userId))
+      .returning({ creditsAvailable: credits.creditsAvailable });
+
+    await tx.update(users)
+      .set({
+        credits: sql`${users.credits} + ${input.amount}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, input.userId));
+
+    await tx.insert(creditTransactions).values({
+      amount: Math.abs(input.amount),
+      metadata: input.metadata ?? {},
+      reason: input.reason,
+      userId: input.userId,
+      workflowId: input.workflowId ?? null,
+    });
+
+    return updated;
   }
 
   static async syncMirrorFromUsers() {

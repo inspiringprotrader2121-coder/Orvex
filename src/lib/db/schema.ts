@@ -32,6 +32,13 @@ export const workflowStatusEnum = pgEnum("workflow_status", [
   "failed",
 ]);
 
+export const workflowOutboxStatusEnum = pgEnum("workflow_outbox_status", [
+  "pending",
+  "processing",
+  "sent",
+  "failed",
+]);
+
 export const workflowTypeEnum = pgEnum("workflow_type", [
   "listing_intelligence",
   "competitor_analysis",
@@ -235,6 +242,25 @@ export const workflows = pgTable("workflows", {
   batchIdx: index("workflows_batch_idx").on(table.batchId),
 }));
 
+export const workflowOutbox = pgTable("workflow_outbox", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  jobType: workflowTypeEnum("job_type").notNull(),
+  jobData: jsonb("job_data").default(sql`'{}'::jsonb`).notNull(),
+  status: workflowOutboxStatusEnum("status").default("pending").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  workflowIdx: uniqueIndex("workflow_outbox_workflow_idx").on(table.workflowId),
+  statusNextIdx: index("workflow_outbox_status_next_idx").on(table.status, table.nextAttemptAt),
+  userCreatedIdx: index("workflow_outbox_user_created_idx").on(table.userId, table.createdAt),
+}));
+
 export const credits = pgTable("credits", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).unique().notNull(),
@@ -255,6 +281,15 @@ export const creditTransactions = pgTable("credit_transactions", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   userCreatedIdx: index("credit_transactions_user_created_idx").on(table.userId, table.createdAt),
+}));
+
+export const rateLimitCounters = pgTable("rate_limit_counters", {
+  key: varchar("key", { length: 191 }).primaryKey(),
+  count: integer("count").default(0).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  expiresIdx: index("rate_limit_counters_expires_idx").on(table.expiresAt),
 }));
 
 export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
@@ -670,6 +705,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   projects: many(projects),
   storeConnections: many(storeConnections),
   workflows: many(workflows),
+  workflowOutboxEntries: many(workflowOutbox),
   workflowBatches: many(workflowBatches),
   listingAnalyses: many(listingAnalyses),
   competitorAnalyses: many(competitorAnalyses),
@@ -706,4 +742,9 @@ export const workflowsRelations = relations(workflows, ({ one }) => ({
   project: one(projects, { fields: [workflows.projectId], references: [projects.id] }),
   batch: one(workflowBatches, { fields: [workflows.batchId], references: [workflowBatches.id] }),
   storeConnection: one(storeConnections, { fields: [workflows.storeConnectionId], references: [storeConnections.id] }),
+}));
+
+export const workflowOutboxRelations = relations(workflowOutbox, ({ one }) => ({
+  user: one(users, { fields: [workflowOutbox.userId], references: [users.id] }),
+  workflow: one(workflows, { fields: [workflowOutbox.workflowId], references: [workflows.id] }),
 }));

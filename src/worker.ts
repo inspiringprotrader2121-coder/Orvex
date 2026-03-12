@@ -13,6 +13,7 @@ import {
   type MockupGenerationJob,
 } from "@server/queues/mockup-queue";
 import { WorkerNodeService } from "@server/services/admin/worker-node-service";
+import { WorkflowOutboxService } from "@server/services/workflow-outbox-service";
 import { processWorkflowJob, workflowWorkerRuntimeConfig } from "@server/workers/workflow-processor";
 import { mockupWorkerRuntimeConfig, processMockupJob } from "@server/workers/mockup-processor";
 
@@ -121,6 +122,30 @@ async function bootWorkers(): Promise<WorkerSet> {
   setInterval(() => {
     void reportWorkerHeartbeat(queueNames);
   }, 60_000);
+
+  let dispatchSweepInFlight = false;
+  const drainOutbox = async () => {
+    if (dispatchSweepInFlight) {
+      return;
+    }
+
+    dispatchSweepInFlight = true;
+    try {
+      const dispatched = await WorkflowOutboxService.dispatchPending(25);
+      if (dispatched > 0) {
+        console.log(`[Worker] Dispatched ${dispatched} pending workflow outbox entr${dispatched === 1 ? "y" : "ies"}.`);
+      }
+    } catch (error) {
+      console.error("[Worker] Failed to dispatch pending workflows:", getErrorMessage(error));
+    } finally {
+      dispatchSweepInFlight = false;
+    }
+  };
+
+  void drainOutbox();
+  setInterval(() => {
+    void drainOutbox();
+  }, 5_000);
 
   return {
     mockupWorker,

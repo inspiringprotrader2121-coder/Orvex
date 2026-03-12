@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { pool } from "@/lib/db";
 import { getErrorMessage } from "@/lib/errors";
 
 type RateLimitState = {
@@ -27,6 +28,10 @@ function getMemoryStore() {
   }
 
   return globalForRateLimit.authRateLimitMemory;
+}
+
+function canUseMemoryFallback() {
+  return process.env.NODE_ENV !== "production" || isRedisDisabledForBuild();
 }
 
 function getRedisClient() {
@@ -123,6 +128,45 @@ async function readRedisState(key: string): Promise<RateLimitState | null> {
   }
 }
 
+async function readDatabaseState(key: string): Promise<RateLimitState | null> {
+  if (isRedisDisabledForBuild()) {
+    return null;
+  }
+
+  try {
+    const { rows } = await pool.query<{
+      count: number;
+      expiresAt: Date;
+    }>(`
+      select
+        count,
+        expires_at as "expiresAt"
+      from rate_limit_counters
+      where key = $1
+    `, [key]);
+
+    const row = rows[0];
+    if (!row) {
+      return { count: 0, retryAfterSeconds: 0 };
+    }
+
+    const retryAfterSeconds = Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+
+    if (retryAfterSeconds <= 0) {
+      await resetDatabaseState(key);
+      return { count: 0, retryAfterSeconds: 0 };
+    }
+
+    return {
+      count: Number(row.count ?? 0),
+      retryAfterSeconds,
+    };
+  } catch (error) {
+    console.error("[RateLimit] Database read failed:", getErrorMessage(error));
+    return null;
+  }
+}
+
 async function incrementRedisState(key: string, windowSeconds: number): Promise<RateLimitState | null> {
   const client = getRedisClient();
   if (!client) {
@@ -149,6 +193,49 @@ async function incrementRedisState(key: string, windowSeconds: number): Promise<
   }
 }
 
+async function incrementDatabaseState(key: string, windowSeconds: number): Promise<RateLimitState | null> {
+  if (isRedisDisabledForBuild()) {
+    return null;
+  }
+
+  try {
+    const { rows } = await pool.query<{
+      count: number;
+      expiresAt: Date;
+    }>(`
+      insert into rate_limit_counters (key, count, expires_at, updated_at)
+      values ($1, 1, now() + ($2 * interval '1 second'), now())
+      on conflict (key)
+      do update set
+        count = case
+          when rate_limit_counters.expires_at <= now() then 1
+          else rate_limit_counters.count + 1
+        end,
+        expires_at = case
+          when rate_limit_counters.expires_at <= now() then now() + ($2 * interval '1 second')
+          else rate_limit_counters.expires_at
+        end,
+        updated_at = now()
+      returning
+        count,
+        expires_at as "expiresAt"
+    `, [key, windowSeconds]);
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      count: Number(row.count ?? 0),
+      retryAfterSeconds: Math.max(1, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000)),
+    };
+  } catch (error) {
+    console.error("[RateLimit] Database increment failed:", getErrorMessage(error));
+    return null;
+  }
+}
+
 async function resetRedisState(key: string) {
   const client = getRedisClient();
   if (!client) {
@@ -162,13 +249,34 @@ async function resetRedisState(key: string) {
   }
 }
 
+async function resetDatabaseState(key: string) {
+  if (isRedisDisabledForBuild()) {
+    return;
+  }
+
+  try {
+    await pool.query("delete from rate_limit_counters where key = $1", [key]);
+  } catch (error) {
+    console.error("[RateLimit] Database reset failed:", getErrorMessage(error));
+  }
+}
+
 export async function getRateLimitState(key: string) {
   const redisState = await readRedisState(key);
   if (redisState) {
     return redisState;
   }
 
-  return readMemoryState(key);
+  const databaseState = await readDatabaseState(key);
+  if (databaseState) {
+    return databaseState;
+  }
+
+  if (canUseMemoryFallback()) {
+    return readMemoryState(key);
+  }
+
+  return { count: 0, retryAfterSeconds: 0 };
 }
 
 export async function incrementRateLimit(key: string, windowSeconds: number) {
@@ -177,10 +285,23 @@ export async function incrementRateLimit(key: string, windowSeconds: number) {
     return redisState;
   }
 
-  return incrementMemoryState(key, windowSeconds);
+  const databaseState = await incrementDatabaseState(key, windowSeconds);
+  if (databaseState) {
+    return databaseState;
+  }
+
+  if (canUseMemoryFallback()) {
+    return incrementMemoryState(key, windowSeconds);
+  }
+
+  return { count: 1, retryAfterSeconds: windowSeconds };
 }
 
 export async function resetRateLimit(key: string) {
   await resetRedisState(key);
-  resetMemoryState(key);
+  await resetDatabaseState(key);
+
+  if (canUseMemoryFallback()) {
+    resetMemoryState(key);
+  }
 }

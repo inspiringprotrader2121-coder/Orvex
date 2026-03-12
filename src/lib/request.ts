@@ -33,8 +33,8 @@ export function getRequestIp(request: Request) {
 
   const forwardedFor = parseForwardedFor(request.headers.get("x-forwarded-for"));
   if (forwardedFor.length > 0) {
-    // Reverse proxies typically append the client address to the end of X-Forwarded-For.
-    return forwardedFor[forwardedFor.length - 1];
+    // The left-most X-Forwarded-For entry is the original client IP.
+    return forwardedFor[0];
   }
 
   return "unknown";

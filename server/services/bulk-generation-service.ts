@@ -21,6 +21,7 @@ export class BulkGenerationService {
     for (const [index, row] of input.rows.entries()) {
       try {
         const workflowId = await WorkflowService.startWorkflow(input.userId, {
+          batchId,
           creditsCost: env.bulkLaunchCreditCost,
           inputData: row,
           job: {
@@ -33,7 +34,6 @@ export class BulkGenerationService {
           sourceProvider: "internal",
         });
 
-        await WorkflowService.attachWorkflowToBatch(workflowId, batchId);
         queued.push({ index, workflowId });
       } catch (error) {
         failures.push({

@@ -88,7 +88,7 @@ export default async function CreditsPage() {
             <LiveCreditValue initialCredits={availableCredits} />
           </div>
           <p className="mt-5 max-w-2xl text-sm leading-relaxed text-gray-400">
-            Every AI workflow deducts credits atomically when it is queued. Successful Stripe credit purchases push updated balances back to the dashboard in real time.
+            Every AI workflow reserves credits atomically when it is created, then dispatches safely into the worker queues. Successful Stripe credit purchases push updated balances back to the dashboard in real time.
           </p>
         </section>
 
