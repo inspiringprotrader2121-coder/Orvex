@@ -131,7 +131,7 @@ ${input.channelsToGenerate.map((channel) => `- ${channel}`).join("\n")}
 For each channel, provide:
 1. title: An engaging, platform-optimized headline.
 2. description: The primary body text or post content.
-3. hashtags: A string of 5-15 relevant tags.
+3. hashtags: An array of 5-15 relevant tags.
 4. caption: A short, punchy summary for social sharing.
       `.trim(),
     });

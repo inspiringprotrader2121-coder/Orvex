@@ -95,7 +95,7 @@ export function MultiChannelLaunchStudio({
           </div>
           <h2 className="text-3xl font-black tracking-tight text-white">Generate launch copy across every channel</h2>
           <p className="max-w-3xl text-sm leading-relaxed text-gray-400">
-            This route stays lightweight, pushes work into BullMQ, and lets the worker decide whether to generate fresh content or fulfill from shared Redis cache.
+            This route stays lightweight, pushes work into BullMQ, and streams results back as the worker completes each channel.
           </p>
         </div>
 

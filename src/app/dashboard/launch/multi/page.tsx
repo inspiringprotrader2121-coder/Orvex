@@ -49,7 +49,7 @@ export default async function MultiChannelLaunchPage() {
         <div className="space-y-3">
           <h1 className="text-4xl font-black tracking-tight text-white">Multi-channel launch packs</h1>
           <p className="max-w-3xl text-sm leading-relaxed text-gray-400">
-            Generate platform-aware launch copy for Etsy, Shopify, Amazon, TikTok, Pinterest, and Instagram through one worker-backed workflow. The request path stays thin, Redis absorbs repeat lookups, and every artifact lands in PostgreSQL for durable reads behind multiple app nodes.
+            Generate platform-aware launch copy for Etsy, Shopify, Amazon, TikTok, Pinterest, and Instagram through one worker-backed workflow. The request path stays thin, and every artifact lands in PostgreSQL for durable reads behind multiple app nodes.
           </p>
         </div>
       </header>
@@ -57,9 +57,9 @@ export default async function MultiChannelLaunchPage() {
       <ModuleMetricsGrid
         metrics={[
           { accent: "text-indigo-300", label: "Launch Packs", value: summary?.totalArtifacts ?? 0 },
-          { accent: "text-emerald-300", label: "Cache Hits", value: Number(summary?.cacheHits ?? 0) },
+          { accent: "text-emerald-300", label: "Artifacts Stored", value: summary?.totalArtifacts ?? 0 },
           { accent: "text-sky-300", label: "Channels", value: 6 },
-          { accent: "text-amber-300", label: "Delivery Mode", value: "Worker + Cache" },
+          { accent: "text-amber-300", label: "Delivery Mode", value: "Worker" },
         ]}
       />
 
@@ -72,7 +72,7 @@ export default async function MultiChannelLaunchPage() {
         emptyMessage="No multi-channel launch packs yet. Generate one to seed the shared launch content layer."
         items={recentArtifacts.map((item) => ({
           href: `/dashboard/workflows/${item.workflowId}`,
-          kicker: item.cacheHit ? "Served from cache" : "Fresh AI generation",
+          kicker: "Fresh AI generation",
           summary: `${item.productType} for ${item.targetAudience}`,
           title: item.productName,
         }))}
@@ -87,9 +87,9 @@ export default async function MultiChannelLaunchPage() {
             title: "Stateless APIs",
           },
           {
-            description: "Redis cache reduces duplicate AI generations when users rerun identical launch briefs.",
+            description: "Artifacts are stored centrally so teams can reuse and track launch content.",
             icon: Layers3,
-            title: "Shared Cache Layer",
+            title: "Shared Artifact Store",
           },
           {
             description: "Dedicated artifact rows keep channel output queryable for analytics, exports, and future personalization.",

@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { auth } from "@/auth";
 import { WorkflowSubmissionService } from "@server/services/workflow-submission-service";
 import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
+import { FeatureAccessService, FeatureDisabledError } from "@server/services/feature-access-service";
 import { InsufficientCreditsError, RateLimitExceededError } from "@server/utils/errors";
 import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 
@@ -26,6 +27,10 @@ export async function POST(request: Request) {
 
   try {
     await WorkflowAbuseService.assertWorkflowSubmission(request, userId);
+    await FeatureAccessService.assertEnabled("launch_pack_generation", {
+      subscriptionTier: session.user.subscriptionTier,
+      userId,
+    });
     const payload = await request.json();
     const result = await WorkflowSubmissionService.startLaunchPack(userId, payload);
 
@@ -54,6 +59,10 @@ export async function POST(request: Request) {
         status: 429,
         headers: rateLimitHeaders,
       });
+    }
+
+    if (error instanceof FeatureDisabledError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
     }
 
     return NextResponse.json({ error: "Unable to queue launch pack" }, { status: 500 });

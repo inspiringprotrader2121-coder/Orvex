@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { boundedScore } from "./common";
+import { CompetitorMarketListingSchema } from "./competitor-analysis";
+import { boundedScore, ProviderSchema } from "./common";
 
 export const SeoKeywordRequestSchema = z.object({
   inputText: z.string().min(5).max(500),
@@ -22,11 +23,39 @@ export const SeoKeywordAiSchema = z.object({
 });
 
 export const SeoKeywordResultSchema = SeoKeywordAiSchema.extend({
-  cacheKey: z.string().uuid().optional(),
+  cacheKey: z.string().optional(),
   cacheHit: z.boolean().optional(),
   suggestionId: z.string().uuid().optional(),
+});
+
+export const SeoKeywordMarketRequestSchema = z.object({
+  keyword: z.string().trim().min(2).max(120),
+  provider: ProviderSchema.default("etsy"),
+  limit: z.number().int().min(3).max(40).default(24),
+});
+
+export const SeoKeywordMarketStatsSchema = z.object({
+  averagePrice: z.number().nullable(),
+  lowPrice: z.number().nullable(),
+  highPrice: z.number().nullable(),
+  averageRating: z.number().nullable(),
+  averageReviewCount: z.number().nullable(),
+  medianReviewCount: z.number().nullable(),
+  competitionScore: z.number().min(0).max(100),
+  sampledListings: z.number().int().min(0),
+});
+
+export const SeoKeywordMarketResponseSchema = z.object({
+  keyword: z.string(),
+  provider: ProviderSchema,
+  cacheHit: z.boolean(),
+  capturedAt: z.string(),
+  stats: SeoKeywordMarketStatsSchema,
+  listings: z.array(CompetitorMarketListingSchema).max(40),
 });
 
 export type SeoKeywordRequest = z.infer<typeof SeoKeywordRequestSchema>;
 export type SeoKeywordAiResult = z.infer<typeof SeoKeywordAiSchema>;
 export type SeoKeywordResult = z.infer<typeof SeoKeywordResultSchema>;
+export type SeoKeywordMarketRequest = z.infer<typeof SeoKeywordMarketRequestSchema>;
+export type SeoKeywordMarketResponse = z.infer<typeof SeoKeywordMarketResponseSchema>;

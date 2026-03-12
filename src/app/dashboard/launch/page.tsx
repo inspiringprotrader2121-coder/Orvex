@@ -23,7 +23,6 @@ export default async function LaunchPage() {
       totalLaunchPacks: count(launchPacks.id),
     }).from(launchPacks).where(eq(launchPacks.userId, userId)),
     db.select({
-      cacheHits: sql<number>`coalesce(sum(case when ${multiChannelLaunchPacks.cacheHit} then 1 else 0 end), 0)`,
       totalMultiChannelLaunchPacks: count(multiChannelLaunchPacks.id),
     }).from(multiChannelLaunchPacks).where(eq(multiChannelLaunchPacks.userId, userId)),
     db.select({
@@ -84,7 +83,6 @@ export default async function LaunchPage() {
           { accent: "text-sky-300", label: "Avg Emails", value: Number(summary?.avgEmails ?? 0) },
           { accent: "text-amber-300", label: "Avg Calendar Days", value: Number(summary?.avgCalendarDays ?? 0) },
           { accent: "text-fuchsia-300", label: "Multi-Channel Packs", value: multiChannelSummary?.totalMultiChannelLaunchPacks ?? 0 },
-          { accent: "text-cyan-300", label: "Multi-Channel Cache Hits", value: Number(multiChannelSummary?.cacheHits ?? 0) },
           { accent: "text-rose-300", label: "Mockup Runs", value: mockupSummary?.totalMockups ?? 0 },
         ]}
       />
@@ -113,7 +111,7 @@ export default async function LaunchPage() {
             emptyMessage="No multi-channel launch packs yet. Open the studio to generate one across Etsy, Shopify, Amazon, TikTok, Pinterest, and Instagram."
             items={recentMultiChannelItems.map((item) => ({
               href: `/dashboard/workflows/${item.workflowId}`,
-              kicker: item.cacheHit ? "Served from cache" : "Fresh AI generation",
+              kicker: "Artifact stored",
               summary: `${item.productType} for ${item.targetAudience}`,
               title: item.productName,
             }))}
@@ -130,7 +128,7 @@ export default async function LaunchPage() {
         items={recentMockups.map((item) => ({
           href: `/dashboard/workflows/${item.workflowId}`,
           kicker: `${Array.isArray(item.images) ? item.images.length : 0} variants`,
-          summary: `${item.color} • ${item.style}`,
+          summary: `${item.color} | ${item.style}`,
           title: item.productName,
         }))}
         title="Recent mockup generations"

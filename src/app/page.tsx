@@ -39,15 +39,15 @@ export default function Home() {
 
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 backdrop-blur-sm">
             <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            <span className="text-xs font-medium text-zinc-300">Orvex 2.0 is now live</span>
+            <span className="text-xs font-medium text-zinc-300">Live now: AI workflows + real-market SEO signals</span>
           </div>
 
           <h1 className="mb-6 max-w-4xl bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-5xl font-bold tracking-tighter text-transparent md:text-7xl">
-            The AI Growth Operating System for Digital Creators
+            The AI Growth Operating System for Etsy & Creator Commerce
           </h1>
 
           <p className="mb-10 max-w-2xl text-lg leading-relaxed text-zinc-400 md:text-xl">
-            Automate your product launches, optimize listings, and scale your digital storefront with powerful AI workflows designed specifically for creators.
+            Discover opportunities, generate listings, launch multi-channel campaigns, and optimize storefront performance with real-time AI workflows built for digital product sellers.
           </p>
 
           <div className="flex flex-col items-center gap-4 sm:flex-row">
@@ -69,67 +69,177 @@ export default function Home() {
         <section id="features" className="w-full max-w-6xl px-6 py-24">
           <div className="mb-16 text-center">
             <h2 className="mb-4 text-3xl font-bold md:text-4xl">Everything you need to launch</h2>
-            <p className="text-zinc-400">Stop doing manual keyword research. Let Orvex handle the heavy lifting.</p>
+            <p className="text-zinc-400">AI workflows plus real market signals to plan, create, and scale faster.</p>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             <FeatureCard
               href="/discover"
               icon={<Compass className="h-6 w-6 text-emerald-400" />}
-              title="Discover Opportunities"
+              title="Opportunity Radar"
               description="Analyze niche demand, competition, and trends to surface product ideas worth launching."
-            />
-            <FeatureCard
-              href="/forge"
-              icon={<PenTool className="h-6 w-6 text-indigo-400" />}
-              title="Forge Listing Copy"
-              description="Generate Etsy-ready titles, descriptions, tags, and FAQs from a few core product inputs."
             />
             <FeatureCard
               href="/optimize"
               icon={<Search className="h-6 w-6 text-sky-400" />}
-              title="Optimize Listings"
-              description="Score listings, detect keyword gaps, and benchmark competitor positioning with AI analysis."
+              title="Listing Intelligence"
+              description="Audit listings, detect keyword gaps, and benchmark competitor positioning with AI analysis."
+            />
+            <FeatureCard
+              href="/forge"
+              icon={<PenTool className="h-6 w-6 text-indigo-400" />}
+              title="Listing Forge"
+              description="Generate Etsy-ready titles, descriptions, tags, and FAQs from core product inputs."
             />
             <FeatureCard
               href="/launch"
               icon={<Flame className="h-6 w-6 text-amber-400" />}
-              title="Launch Campaigns"
-              description="Create multi-channel launch assets, including hooks, captions, emails, and rollout plans."
+              title="Launch Pack Studio"
+              description="Create hooks, captions, emails, FAQs, and launch plans in one workflow."
+            />
+            <FeatureCard
+              href="/launch"
+              icon={<Zap className="h-6 w-6 text-fuchsia-400" />}
+              title="Multi-Channel Blitz"
+              description="Generate platform-specific content for Etsy, Shopify, Amazon, TikTok, Pinterest, and Instagram."
+            />
+            <FeatureCard
+              href="/launch"
+              icon={<Flame className="h-6 w-6 text-rose-400" />}
+              title="Mockup Generator"
+              description="Create AI product mockups and hero images to elevate store visuals fast."
+            />
+            <FeatureCard
+              href="/optimize/seo"
+              icon={<Search className="h-6 w-6 text-emerald-300" />}
+              title="SEO Keyword Intelligence"
+              description="Blend AI keyword ideation with live Etsy search signals for better SEO decisions."
+            />
+            <FeatureCard
+              href="/dashboard"
+              icon={<Compass className="h-6 w-6 text-blue-300" />}
+              title="Realtime Workflow Ops"
+              description="Track jobs live, save outputs, and monitor performance with a unified dashboard."
             />
           </div>
         </section>
 
-        <section className="w-full max-w-4xl border-t border-white/10 px-6 py-24">
-          <div className="mb-12 text-center">
-            <h2 className="mb-4 text-3xl font-bold md:text-4xl">Simple, transparent pricing</h2>
-            <p className="text-zinc-400">Pay only for what you use. No monthly subscriptions required.</p>
+        <section className="w-full max-w-5xl border-t border-white/10 px-6 py-24">
+          <div className="mb-10 text-center">
+            <h2 className="mb-3 text-3xl font-bold md:text-4xl">Platform-grade foundations</h2>
+            <p className="text-zinc-400">Operational reliability built in for scale, security, and growth.</p>
           </div>
 
-          <div className="mx-auto flex max-w-xl flex-col items-center rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
-            <div className="mb-2 text-5xl font-bold">$10</div>
-            <div className="mb-8 text-zinc-400">for 100 AI credits</div>
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Security + Access</p>
+              <h3 className="mt-3 text-xl font-semibold text-white">RBAC & Admin Control Plane</h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                Role-based access, audit logs, and a super admin dashboard for full operational visibility.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Reliability</p>
+              <h3 className="mt-3 text-xl font-semibold text-white">Queue + Workflow Engine</h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                BullMQ-backed processing with realtime updates, retries, and durable workflow tracking.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Billing</p>
+              <h3 className="mt-3 text-xl font-semibold text-white">Credits + Subscriptions</h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                Flexible credit packs plus subscription tiers that unlock premium AI workflows.
+              </p>
+            </div>
+          </div>
+        </section>
 
-            <ul className="mb-8 w-full space-y-4">
-              {[
-                "1 credit = 1 complete asset generation",
-                "Access to all AI workflows",
-                "Priority support",
-                "Credits never expire",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-                  <span className="text-zinc-300">{item}</span>
-                </li>
-              ))}
-            </ul>
+        <section className="w-full max-w-6xl border-t border-white/10 px-6 py-24">
+          <div className="mb-12 text-center">
+            <h2 className="mb-4 text-3xl font-bold md:text-4xl">Flexible pricing built for growth</h2>
+            <p className="text-zinc-400">Use credit packs for execution, add subscriptions for premium AI access and priority queues.</p>
+          </div>
 
-            <Link
-              href="/register"
-              className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 py-4 text-center font-semibold transition-opacity hover:opacity-90"
-            >
-              Get Started Now
-            </Link>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Credit Packs</p>
+                <h3 className="mt-3 text-2xl font-bold text-white">Pay per execution</h3>
+                <p className="mt-2 text-sm text-zinc-400">Credits power workflows like launch packs, SEO, mockups, and listing generation.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-[#0a0f1c] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Starter pack</p>
+                  <div className="mt-2 text-3xl font-bold">$29</div>
+                  <p className="text-sm text-zinc-400">50 AI credits</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-[#0a0f1c] p-4">
+                  <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Scale pack</p>
+                  <div className="mt-2 text-3xl font-bold">$59</div>
+                  <p className="text-sm text-zinc-400">120 AI credits</p>
+                </div>
+              </div>
+              <ul className="space-y-3 text-sm text-zinc-300">
+                {[
+                  "Credits never expire",
+                  "1 credit = 1 complete asset generation",
+                  "Real-time workflow tracking",
+                  "Instant purchase via Stripe",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-3">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/register"
+                className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 py-4 text-center font-semibold transition-opacity hover:opacity-90"
+              >
+                Start with Credits
+              </Link>
+            </div>
+
+            <div className="flex flex-col gap-6 rounded-3xl border border-white/10 bg-white/5 p-8 backdrop-blur-sm">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Subscriptions</p>
+                <h3 className="mt-3 text-2xl font-bold text-white">Unlock premium workflows</h3>
+                <p className="mt-2 text-sm text-zinc-400">Subscriptions add priority access, premium workflows, and higher growth OS capability.</p>
+              </div>
+              <div className="grid gap-4 md:grid-cols-3">
+                {[
+                  { label: "Starter", price: "$19/mo" },
+                  { label: "Pro", price: "$49/mo" },
+                  { label: "Growth", price: "$99/mo" },
+                ].map((plan) => (
+                  <div key={plan.label} className="rounded-2xl border border-white/10 bg-[#0a0f1c] p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">{plan.label}</p>
+                    <div className="mt-2 text-2xl font-bold">{plan.price}</div>
+                    <p className="text-xs text-zinc-500">Premium AI access</p>
+                  </div>
+                ))}
+              </div>
+              <ul className="space-y-3 text-sm text-zinc-300">
+                {[
+                  "Premium feature unlocks",
+                  "Priority queue access",
+                  "Advanced launch and optimization workflows",
+                  "Priority support",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-3">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/register"
+                className="w-full rounded-xl border border-white/10 py-4 text-center font-semibold transition-colors hover:bg-white/5"
+              >
+                Compare Plans
+              </Link>
+            </div>
           </div>
         </section>
       </main>

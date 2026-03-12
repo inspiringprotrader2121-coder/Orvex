@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
-import { SeoKeywordService } from "@server/services/seo-keyword-service";
+import { SeoKeywordMarketService } from "@server/services/seo-keyword-market-service";
 import { FeatureAccessService, FeatureDisabledError } from "@server/services/feature-access-service";
+
+function errorResponse(error: unknown) {
+  if (error instanceof FeatureDisabledError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
+  console.error("SEO keyword market search error:", error);
+  return NextResponse.json({ error: "Unable to fetch keyword market data" }, { status: 500 });
+}
 
 export async function POST(request: Request) {
   try {
@@ -18,30 +27,13 @@ export async function POST(request: Request) {
       userId,
     });
 
-    const { suggestionId, listingId, notes } = await request.json() as {
-      suggestionId: string;
-      listingId: string;
-      notes?: string | null;
-    };
-
-    await SeoKeywordService.applyToListing({
-      suggestionId,
-      listingId,
-      notes,
-      userId,
-    });
-
-    return NextResponse.json({ success: true });
+    const payload = await request.json();
+    const response = await SeoKeywordMarketService.searchMarketplace(payload);
+    return NextResponse.json(response);
   } catch (error) {
     if (error instanceof InvalidOriginError) {
       return NextResponse.json({ error: error.message }, { status: 403 });
     }
-
-    if (error instanceof FeatureDisabledError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
-    }
-
-    console.error("SEO keyword apply failed:", error);
-    return NextResponse.json({ error: "Unable to apply SEO suggestion" }, { status: 500 });
+    return errorResponse(error);
   }
 }
