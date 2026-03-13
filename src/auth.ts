@@ -87,6 +87,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.status = appUser.status;
         token.subscriptionTier = appUser.subscriptionTier;
       }
+
+      if (!token.id) {
+        return token;
+      }
+
+      const currentUser = await db.query.users.findFirst({
+        columns: {
+          role: true,
+          status: true,
+          subscriptionTier: true,
+        },
+        where: eq(users.id, String(token.id)),
+      });
+
+      if (!currentUser || currentUser.status !== "active") {
+        return {};
+      }
+
+      token.role = currentUser.role;
+      token.status = currentUser.status;
+      token.subscriptionTier = currentUser.subscriptionTier;
       return token;
     },
     async session({ session, token }) {
@@ -102,6 +123,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: {
     signIn: "/login",
     error: "/login",
+  },
+  session: {
+    maxAge: 60 * 60 * 4,
+    strategy: "jwt",
+    updateAge: 60 * 15,
   },
   secret: process.env.AUTH_SECRET,
 });

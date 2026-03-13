@@ -42,6 +42,26 @@ export class WorkflowAbuseService {
     });
   }
 
+  static async assertSeoMarketSearch(request: Request, userId: string) {
+    await this.enforceLimits(request, userId, {
+      prefix: "workflow:seo-market-search",
+      ipLimit: env.seoMarketSearchIpLimit,
+      userLimit: env.seoMarketSearchUserLimit,
+      windowSeconds: env.seoMarketSearchWindowSeconds,
+      actionLabel: "SEO market searches",
+    });
+  }
+
+  static async assertSocketTokenIssue(request: Request, userId: string) {
+    await this.enforceLimits(request, userId, {
+      prefix: "workflow:socket-token",
+      ipLimit: env.socketTokenIpLimit,
+      userLimit: env.socketTokenUserLimit,
+      windowSeconds: env.socketTokenWindowSeconds,
+      actionLabel: "socket token requests",
+    });
+  }
+
   private static async enforceLimits(request: Request, userId: string, config: RateLimitConfig) {
     const ip = getRequestIp(request);
     await this.checkLimit(`${config.prefix}:ip:${ip}`, config.ipLimit, config.windowSeconds, `${config.actionLabel} from this network`);

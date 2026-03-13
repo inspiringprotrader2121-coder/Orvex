@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const ListingGeneratorInputSchema = z.object({
-  productName: z.string().trim().min(2),
-  targetAudience: z.string().trim().min(2),
-  productType: z.string().trim().min(2),
-  tone: z.string().trim().min(2),
+  productName: z.string().trim().min(2).max(160),
+  targetAudience: z.string().trim().min(2).max(160),
+  productType: z.string().trim().min(2).max(120),
+  tone: z.string().trim().min(2).max(80),
   projectId: z.string().uuid().optional(),
 });
 

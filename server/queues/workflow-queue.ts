@@ -1,6 +1,14 @@
 import { FlowProducer, Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
+import { z } from "zod";
 import { getRedisConnection } from "@/lib/redis";
+import { CompetitorAnalyzerInputSchema } from "@server/schemas/competitor-analysis";
+import { LaunchPackInputSchema } from "@server/schemas/launch-pack";
+import { ListingGeneratorInputSchema } from "@server/schemas/listing-generator";
+import { ListingUrlInputSchema } from "@server/schemas/listing-intelligence";
 import type { ChannelId } from "@server/schemas/multi-channel-launch-pack";
+import { MultiChannelLaunchPackInputSchema } from "@server/schemas/multi-channel-launch-pack";
+import { OpportunityInputSchema } from "@server/schemas/opportunity";
+import { SeoKeywordRequestSchema } from "@server/schemas/seo-keywords";
 import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 
 export type ListingIntelligenceJob = {
@@ -123,6 +131,70 @@ export type OrvexWorkflowJob =
   | SeoKeywordAnalysisJob;
 
 export type OrvexWorkflowJobName = OrvexWorkflowJob["type"];
+
+const UserIdSchema = z.union([z.string().uuid(), z.literal("system")]);
+const WorkflowIdSchema = z.union([z.string().uuid(), z.literal("system")]);
+
+export const OrvexWorkflowJobSchema = z.discriminatedUnion("type", [
+  z.object({
+    payload: ListingUrlInputSchema,
+    type: z.literal("listing_intelligence"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: CompetitorAnalyzerInputSchema,
+    type: z.literal("competitor_analysis"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: OpportunityInputSchema,
+    type: z.literal("opportunity_analysis"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: ListingGeneratorInputSchema,
+    type: z.literal("listing_forge"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: LaunchPackInputSchema,
+    type: z.literal("launch_pack_generation"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: LaunchPackInputSchema,
+    type: z.literal("etsy_listing_launch_pack"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: MultiChannelLaunchPackInputSchema,
+    type: z.literal("multi_channel_launch_pack"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: MultiChannelLaunchPackInputSchema,
+    type: z.literal("multi_channel_child"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+  z.object({
+    payload: SeoKeywordRequestSchema,
+    type: z.literal("seo_keyword_analysis"),
+    userId: UserIdSchema,
+    workflowId: WorkflowIdSchema,
+  }),
+]);
+
+export function parseOrvexWorkflowJob(input: unknown): OrvexWorkflowJob {
+  return OrvexWorkflowJobSchema.parse(input) as OrvexWorkflowJob;
+}
 
 const connection: ConnectionOptions = getRedisConnection();
 let workflowFlowProducer: FlowProducer | null = null;

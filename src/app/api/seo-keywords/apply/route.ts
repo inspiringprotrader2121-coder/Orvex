@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { auth } from "@/auth";
 import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
+import { SeoKeywordApplyRequestSchema } from "@server/schemas/seo-keywords";
 import { SeoKeywordService } from "@server/services/seo-keyword-service";
 import { FeatureAccessService, FeatureDisabledError } from "@server/services/feature-access-service";
 
@@ -18,11 +20,7 @@ export async function POST(request: Request) {
       userId,
     });
 
-    const { suggestionId, listingId, notes } = await request.json() as {
-      suggestionId: string;
-      listingId: string;
-      notes?: string | null;
-    };
+    const { suggestionId, listingId, notes } = SeoKeywordApplyRequestSchema.parse(await request.json());
 
     await SeoKeywordService.applyToListing({
       suggestionId,
@@ -39,6 +37,13 @@ export async function POST(request: Request) {
 
     if (error instanceof FeatureDisabledError) {
       return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid SEO apply payload",
+        issues: error.issues,
+      }, { status: 400 });
     }
 
     console.error("SEO keyword apply failed:", error);

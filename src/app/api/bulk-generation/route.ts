@@ -13,6 +13,27 @@ import { RateLimitExceededError } from "@server/utils/errors";
 import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
 import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 
+const MAX_BULK_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+class PayloadTooLargeError extends Error {
+  constructor(message = "Bulk upload payload is too large") {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+function assertRequestSizeWithinLimit(request: Request, maxBytes: number) {
+  const rawLength = request.headers.get("content-length");
+  if (!rawLength) {
+    return;
+  }
+
+  const contentLength = Number(rawLength);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new PayloadTooLargeError(`Bulk upload payload exceeds ${Math.round(maxBytes / (1024 * 1024))}MB`);
+  }
+}
+
 async function extractRows(request: Request): Promise<{
   fileName: string;
   projectId?: string;
@@ -36,6 +57,10 @@ async function extractRows(request: Request): Promise<{
 
   if (!(file instanceof File)) {
     throw new Error("A CSV file is required");
+  }
+
+  if (file.size > MAX_BULK_UPLOAD_BYTES) {
+    throw new PayloadTooLargeError(`CSV uploads must be ${Math.round(MAX_BULK_UPLOAD_BYTES / (1024 * 1024))}MB or smaller`);
   }
 
   const csvText = Buffer.from(await file.arrayBuffer()).toString("utf8");
@@ -80,6 +105,7 @@ export async function POST(request: Request) {
 
   try {
     await WorkflowAbuseService.assertBulkGeneration(request, userId);
+    assertRequestSizeWithinLimit(request, MAX_BULK_UPLOAD_BYTES);
     const payload = await extractRows(request);
 
     if (payload.rows.length > env.bulkLaunchMaxRows) {
@@ -118,6 +144,10 @@ export async function POST(request: Request) {
         status: 429,
         headers: rateLimitHeaders,
       });
+    }
+
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
     }
 
     return NextResponse.json({ error: "Unable to queue bulk generation" }, { status: 500 });

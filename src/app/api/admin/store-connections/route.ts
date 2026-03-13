@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { createAdminErrorResponse, requireAdminApiSession } from "@/lib/admin-api";
 import { getRequestIp } from "@/lib/request";
+import { AdminStoreConnectionPatchBodySchema } from "@server/schemas/admin-api";
 import { AdminUsersService } from "@server/services/admin/admin-users-service";
 
 export async function GET() {
@@ -16,10 +18,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const { session } = await requireAdminApiSession("admin.integrations.write", request);
-    const body = await request.json() as {
-      action: "disconnect" | "refresh";
-      connectionId: string;
-    };
+    const body = AdminStoreConnectionPatchBodySchema.parse(await request.json());
 
     await AdminUsersService.updateStoreConnection({
       action: body.action,
@@ -30,6 +29,13 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid store connection payload",
+        issues: error.issues,
+      }, { status: 400 });
+    }
+
     return createAdminErrorResponse(error);
   }
 }

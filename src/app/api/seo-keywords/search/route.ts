@@ -3,10 +3,20 @@ import { auth } from "@/auth";
 import { assertSameOrigin, InvalidOriginError } from "@/lib/origin";
 import { SeoKeywordMarketService } from "@server/services/seo-keyword-market-service";
 import { FeatureAccessService, FeatureDisabledError } from "@server/services/feature-access-service";
+import { WorkflowAbuseService } from "@server/services/workflow-abuse-service";
+import { RateLimitExceededError } from "@server/utils/errors";
 
 function errorResponse(error: unknown) {
   if (error instanceof FeatureDisabledError) {
     return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
+  if (error instanceof RateLimitExceededError) {
+    const headers = error.retryAfterSeconds ? { "Retry-After": `${error.retryAfterSeconds}` } : undefined;
+    return NextResponse.json({ error: error.message }, {
+      headers,
+      status: 429,
+    });
   }
 
   console.error("SEO keyword market search error:", error);
@@ -26,6 +36,7 @@ export async function POST(request: Request) {
       subscriptionTier: session.user.subscriptionTier,
       userId,
     });
+    await WorkflowAbuseService.assertSeoMarketSearch(request, userId);
 
     const payload = await request.json();
     const response = await SeoKeywordMarketService.searchMarketplace(payload);

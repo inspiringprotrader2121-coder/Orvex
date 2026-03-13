@@ -1,26 +1,27 @@
 import type { Job } from "bullmq";
-import type { MockupGenerationJob } from "@server/queues/mockup-queue";
+import { parseMockupGenerationJob, type MockupGenerationJob } from "@server/queues/mockup-queue";
 import { MockupGenerationService } from "@server/services/mockup-generation-service";
 import { WorkflowService } from "@server/services/workflow-service";
 import { env } from "@server/utils/env";
 
 export async function processMockupJob(job: Job<MockupGenerationJob>) {
-  await WorkflowService.markProcessing(job.data.workflowId, 5);
+  const safeJob = parseMockupGenerationJob(job.data);
+  await WorkflowService.markProcessing(safeJob.workflowId, 5);
 
   try {
     const result = await MockupGenerationService.process({
-      color: job.data.payload.color,
-      description: job.data.payload.description,
-      productName: job.data.payload.productName,
-      style: job.data.payload.style,
-      userId: job.data.userId,
-      workflowId: job.data.workflowId,
+      color: safeJob.payload.color,
+      description: safeJob.payload.description,
+      productName: safeJob.payload.productName,
+      style: safeJob.payload.style,
+      userId: safeJob.userId,
+      workflowId: safeJob.workflowId,
     });
 
-    await WorkflowService.markCompleted(job.data.workflowId, result as Record<string, unknown>);
+    await WorkflowService.markCompleted(safeJob.workflowId, result as Record<string, unknown>);
     return result;
   } catch (error) {
-    await WorkflowService.markFailed(job.data.workflowId, error);
+    await WorkflowService.markFailed(safeJob.workflowId, error);
     throw error;
   }
 }

@@ -1,5 +1,7 @@
 import { Queue, type ConnectionOptions, type JobsOptions } from "bullmq";
+import { z } from "zod";
 import { getRedisConnection } from "@/lib/redis";
+import { MockupGenerationInputSchema } from "@server/schemas/mockup-generation";
 import { getWorkflowDefinition } from "@server/workflows/workflow-registry";
 
 export type MockupGenerationJob = {
@@ -14,6 +16,17 @@ export type MockupGenerationJob = {
   userId: string;
   workflowId: string;
 };
+
+export const MockupGenerationJobSchema = z.object({
+  payload: MockupGenerationInputSchema,
+  type: z.literal("mockup_generation"),
+  userId: z.union([z.string().uuid(), z.literal("system")]),
+  workflowId: z.union([z.string().uuid(), z.literal("system")]),
+});
+
+export function parseMockupGenerationJob(input: unknown): MockupGenerationJob {
+  return MockupGenerationJobSchema.parse(input) as MockupGenerationJob;
+}
 
 const connection: ConnectionOptions = getRedisConnection();
 let mockupQueue: Queue<MockupGenerationJob> | null = null;

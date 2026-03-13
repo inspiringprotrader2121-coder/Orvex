@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { createAdminErrorResponse, requireAdminApiSession } from "@/lib/admin-api";
+import { AdminFeatureToggleBodySchema } from "@server/schemas/admin-api";
 import { AdminUsersService } from "@server/services/admin/admin-users-service";
 
 export async function GET() {
@@ -15,14 +17,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { session } = await requireAdminApiSession("admin.features.manage", request);
-    const body = await request.json() as {
-      description?: string | null;
-      key: string;
-      scope: "global" | "tier" | "user";
-      state: "beta" | "disabled" | "enabled";
-      subscriptionTier?: "enterprise" | "free" | "growth" | "pro" | "starter" | null;
-      userId?: string | null;
-    };
+    const body = AdminFeatureToggleBodySchema.parse(await request.json());
 
     await AdminUsersService.upsertFeatureToggle({
       actorUserId: session.user.id,
@@ -36,6 +31,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid feature toggle payload",
+        issues: error.issues,
+      }, { status: 400 });
+    }
+
     return createAdminErrorResponse(error);
   }
 }

@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import type { MultiChannelLaunchPackJob, OrvexWorkflowJob } from "@server/queues/workflow-queue";
+import { parseOrvexWorkflowJob, type MultiChannelLaunchPackJob, type OrvexWorkflowJob } from "@server/queues/workflow-queue";
 import { CompetitorAnalysisService } from "@server/services/competitor-analysis-service";
 import { LaunchPackService } from "@server/services/launch-pack-service";
 import { ListingGeneratorService } from "@server/services/listing-generator-service";
@@ -77,45 +77,46 @@ const workflowHandlers: {
 };
 
 export async function processWorkflowJob(job: Job<OrvexWorkflowJob>) {
-  const isSystemJob = job.data.workflowId === "system";
+  const safeJob = parseOrvexWorkflowJob(job.data);
+  const isSystemJob = safeJob.workflowId === "system";
 
   if (!isSystemJob) {
-    await WorkflowService.markProcessing(job.data.workflowId);
+    await WorkflowService.markProcessing(safeJob.workflowId);
   }
 
   try {
-    if (job.data.type === "multi_channel_launch_pack") {
+    if (safeJob.type === "multi_channel_launch_pack") {
       const result = await MultiChannelLaunchPackService.processParent(job as Job<MultiChannelLaunchPackJob>, {
-        channelsToGenerate: job.data.payload.channelsToGenerate,
-        productName: job.data.payload.productName,
-        productType: job.data.payload.productType,
-        targetAudience: job.data.payload.targetAudience,
-        userId: job.data.userId,
-        workflowId: job.data.workflowId,
+        channelsToGenerate: safeJob.payload.channelsToGenerate,
+        productName: safeJob.payload.productName,
+        productType: safeJob.payload.productType,
+        targetAudience: safeJob.payload.targetAudience,
+        userId: safeJob.userId,
+        workflowId: safeJob.workflowId,
       });
 
       if (!isSystemJob) {
-        await WorkflowService.markCompleted(job.data.workflowId, result);
+        await WorkflowService.markCompleted(safeJob.workflowId, result);
       }
 
       return result;
     }
 
-    const handler = workflowHandlers[job.data.type];
+    const handler = workflowHandlers[safeJob.type as DirectWorkflowType];
     if (!handler) {
-      throw new Error(`Unsupported job type: ${JSON.stringify(job.data)}`);
+      throw new Error(`Unsupported job type: ${JSON.stringify(safeJob)}`);
     }
 
-    const result = await handler(job.data as never);
+    const result = await handler(safeJob as never);
     
     if (!isSystemJob) {
-      await WorkflowService.markCompleted(job.data.workflowId, result);
+      await WorkflowService.markCompleted(safeJob.workflowId, result);
     }
     
     return result;
   } catch (error) {
     if (!isSystemJob) {
-      await WorkflowService.markFailed(job.data.workflowId, error);
+      await WorkflowService.markFailed(safeJob.workflowId, error);
     }
     throw error;
   }

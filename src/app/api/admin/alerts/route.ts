@@ -1,19 +1,13 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { createAdminErrorResponse, requireAdminApiSession } from "@/lib/admin-api";
+import { AdminAlertPatchBodySchema } from "@server/schemas/admin-api";
 import { AdminOperationsService } from "@server/services/admin/admin-operations-service";
 
 export async function PATCH(request: Request) {
   try {
     const { session } = await requireAdminApiSession("admin.operations.write", request);
-    const body = await request.json() as {
-      alertId?: string;
-      backlogThreshold?: number;
-      failedJobsThreshold?: number;
-      mode: "status" | "thresholds";
-      paymentFailureThreshold?: number;
-      staleWorkerMinutes?: number;
-      status?: "acknowledged" | "resolved";
-    };
+    const body = AdminAlertPatchBodySchema.parse(await request.json());
 
     if (body.mode === "thresholds") {
       await AdminOperationsService.updateThresholds({
@@ -35,6 +29,13 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid alert payload",
+        issues: error.issues,
+      }, { status: 400 });
+    }
+
     return createAdminErrorResponse(error);
   }
 }

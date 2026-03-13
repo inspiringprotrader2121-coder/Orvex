@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { createAdminErrorResponse, requireAdminApiSession } from "@/lib/admin-api";
 import { getRequestIp } from "@/lib/request";
+import { AdminCreditsPostBodySchema } from "@server/schemas/admin-api";
 import { AdminCreditsService } from "@server/services/admin/admin-credits-service";
 
 export async function GET(request: Request) {
@@ -26,20 +28,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const { session } = await requireAdminApiSession("admin.users.write", request);
-    const body = await request.json() as
-      | {
-        action: "adjust";
-        amount: number;
-        notes?: string | null;
-        userId: string;
-      }
-      | {
-        action: "refund";
-        amountCents: number;
-        creditsAmount: number;
-        notes?: string | null;
-        userId: string;
-      };
+    const body = AdminCreditsPostBodySchema.parse(await request.json());
 
     if (body.action === "adjust") {
       await AdminCreditsService.adjustCredits({
@@ -62,6 +51,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid credits payload",
+        issues: error.issues,
+      }, { status: 400 });
+    }
+
     return createAdminErrorResponse(error);
   }
 }

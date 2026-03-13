@@ -7,6 +7,12 @@ export const SeoKeywordRequestSchema = z.object({
   source: z.enum(["niche", "listing"]),
 });
 
+export const SeoKeywordApplyRequestSchema = z.object({
+  listingId: z.string().uuid(),
+  notes: z.string().trim().max(1_000).optional().nullable(),
+  suggestionId: z.string().uuid(),
+});
+
 export const SeoKeywordInsightSchema = z.object({
   keyword: z.string().min(1),
   trendScore: boundedScore("trendScore"),
@@ -55,6 +61,7 @@ export const SeoKeywordMarketResponseSchema = z.object({
 });
 
 export type SeoKeywordRequest = z.infer<typeof SeoKeywordRequestSchema>;
+export type SeoKeywordApplyRequest = z.infer<typeof SeoKeywordApplyRequestSchema>;
 export type SeoKeywordAiResult = z.infer<typeof SeoKeywordAiSchema>;
 export type SeoKeywordResult = z.infer<typeof SeoKeywordResultSchema>;
 export type SeoKeywordMarketRequest = z.infer<typeof SeoKeywordMarketRequestSchema>;

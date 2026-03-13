@@ -117,7 +117,18 @@ function getStripeClient() {
 }
 
 function buildAbsoluteUrl(path: string) {
-  return new URL(path, APP_URL).toString();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    throw new Error("Invalid redirect path");
+  }
+
+  const appUrl = new URL(APP_URL);
+  const destination = new URL(path, appUrl);
+
+  if (destination.origin !== appUrl.origin) {
+    throw new Error("Cross-origin redirect path is not allowed");
+  }
+
+  return destination.toString();
 }
 
 function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): SubscriptionStatus {

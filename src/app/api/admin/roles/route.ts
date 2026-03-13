@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { createAdminErrorResponse, requireAdminApiSession } from "@/lib/admin-api";
 import { getRequestIp } from "@/lib/request";
+import { AdminRoleUpsertBodySchema } from "@server/schemas/admin-api";
 import { AdminRolesService } from "@server/services/admin/admin-roles-service";
 
 export async function GET() {
@@ -27,13 +29,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { session } = await requireAdminApiSession("admin.roles.write", request);
-    const body = await request.json() as {
-      id?: string | null;
-      key: string;
-      name: string;
-      description?: string | null;
-      permissions?: string[];
-    };
+    const body = AdminRoleUpsertBodySchema.parse(await request.json());
 
     await AdminRolesService.upsertRole({
       actorUserId: session.user.id,
@@ -47,6 +43,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json({
+        error: "Invalid role payload",
+        issues: error.issues,
+      }, { status: 400 });
+    }
+
     return createAdminErrorResponse(error);
   }
 }
